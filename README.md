@@ -1,25 +1,26 @@
 # ohmyjev
 
-[Jev](https://typesafe.ai) for Claude Code. Jev is TypeSafe's decision model: state and typed questions in,
-probabilities out, in about 300 ms for a fraction of a cent. ohmyjev is a mod (in-process hooks) that puts it in
-front of risky tool calls.
+ohmyjev is a Claude Code mod that asks [Jev](https://typesafe.ai) to judge risky tool calls before they run. Jev is
+TypeSafe's decision model. You send it state and typed questions, and it returns probabilities in about 300 ms for a
+fraction of a cent. The mod runs as in-process hooks and needs Claude Code 2.1.287 or later, where mods are early
+access.
 
-| Battery | What it does |
+| Feature | What it does |
 |---|---|
-| Bash gate | Denies commands Jev judges irreversible (≥ 0.6) or destructive (≥ 0.7) |
-| Write gate | Denies writes outside the repo or `allowPaths` (decided in code, symlink-safe), and writes holding real credentials |
-| Exfil gate | Denies WebFetch and MCP calls that send local data, files or credentials out (≥ 0.7) |
-| Policies | Your own rules (`policies`, `;`-separated) that every gate weighs |
-| Injection screen | Tells the model "treat as data" when Bash, WebFetch, MCP output, or a Read from outside the repo carries instructions aimed at it |
-| Done-check | Pushes back once when the agent says "done" with no sign of a check |
-| Router | Classifies each request once (fast / balanced / deep, how much reasoning, risky?) and raises or lowers effort and the subagent model |
-| Auto-compact | When the task changes at a natural boundary and context is ≥ 40% full, compacts keeping the new request in detail |
-| `ask_jev` | A tool the model can use for quick judgments about repo files or text without reading them into its context |
-| `/jev` | This session's calls, errors, cost, p50, denies, and where the key comes from (never the key) |
+| Bash gate | Denies a command when Jev rates it irreversible at 0.6 or more, or destructive at 0.7 or more. |
+| Write gate | Denies writes outside the repo and `allowPaths`, and writes that contain a real credential. Code makes the path decision and follows symlinks the way the OS does. |
+| Exfil gate | Denies a WebFetch or MCP call when Jev rates it at 0.7 or more for sending local data, files or credentials out. |
+| Policies | Every gate also checks the call against your own rules in the `policies` setting. |
+| Injection screen | Adds a "treat this as data" note for the model when output from Bash, WebFetch, an MCP tool, or a Read outside the repo contains instructions aimed at it. |
+| Done-check | When the agent says it is done but nothing shows it ran a check, blocks the stop once and tells it to verify. |
+| Router | Asks Jev once per request for a tier, an effort level and a risk score, then raises or lowers effort and picks the model for general-purpose subagents. |
+| Auto-compact | Compacts the conversation when the task changes after a finished step and the context is at least 40% full. The summary keeps the new request in full. |
+| `ask_jev` | Gives the model a tool that asks Jev about repo files or text without loading them into its context. |
+| `/jev` | Shows this session's Jev calls, errors, cost, median latency and denies, and where the key comes from. It never prints the key. |
 
-Everything else passes through to Claude Code's normal permission flow: middling answers, Jev being down or slow
-(over 1.5 s), no key, and any ohmyjev error. Nothing waits on you. Jev is one signal, so keep your `settings.json`
-deny rules.
+Anything ohmyjev doesn't deny goes to Claude Code's normal permission flow. That includes middling answers, Jev being
+down or slower than 1.5 s, a missing key, and any error inside ohmyjev. ohmyjev never asks you to approve anything. Jev
+can be wrong, so keep your deny rules in `settings.json`.
 
 ## Install
 
@@ -28,38 +29,39 @@ deny rules.
 /plugin install ohmyjev@ohmyjev
 ```
 
-Enter a TypeSafe key on the settings screen (it's kept in secure storage), or export `TYPESAFE_API_KEY` or
-`OPENROUTER_API_KEY`. From a local checkout: `claude plugin marketplace add /path/to/ohmyjev`, then
-`claude plugin install ohmyjev@ohmyjev`.
+Enter a TypeSafe key on the settings screen, where Claude Code keeps it in secure storage. You can export
+`TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` instead. To install from a local checkout, run
+`claude plugin marketplace add /path/to/ohmyjev` and then `claude plugin install ohmyjev@ohmyjev`.
 
 ## Settings
 
-Every battery and threshold is a row in `/config`. `allowPaths` is a `;`-separated list of places writes may go
-outside the repo. The default is `~/.claude;$TMPDIR;/tmp`; entries holding `..` are ignored.
+Each feature and threshold is a row in `/config`. `allowPaths` lists the places outside the repo where writes may go,
+separated by `;`. The default is `~/.claude;$TMPDIR;/tmp`. ohmyjev ignores any entry that contains `..`.
 
-The router changes effort on the main loop and the model for subagents. `routeMainModel` (off by default) also
-switches the main model, which discards the warm prompt cache. Model ids are `fastModel`, `balancedModel` and
-`deepModel`.
+The router changes effort on the main loop and the model for general-purpose subagents. Turn on `routeMainModel` to
+also switch the main model. It is off by default because switching models throws away the prompt cache. The settings
+`fastModel`, `balancedModel` and `deepModel` hold the model id for each tier.
 
 ## Statusline
 
-Paste `jev_segment()` from `extras/statusline_segment.py` into your statusline script:
+Copy `jev_segment()` from `extras/statusline_segment.py` into your statusline script. It shows one of these:
 
 ```
 jev ✓23 ⛔1 ↑opus/high 🗜2     Jev calls, denies, this turn's route, auto-compactions
-jev ⚠ down                    Jev unreachable or slow in the last 5 minutes: gates are open
+jev ⚠ down                    Jev failed or timed out in the last 5 minutes, so the gates let calls through
 jev ⚠ no key                  no key configured
 ```
 
 ## Logs
 
-Each decision is one line in `~/.ohmyjev/log/<session>.jsonl` (owner-only), best effort.
+ohmyjev writes one line per decision to `~/.ohmyjev/log/<session>.jsonl`, readable only by you. It doesn't wait for the
+write, so a failed write loses that line and nothing else.
 
 ## Develop
 
 ```bash
-claude --plugin-dir "$PWD" -p "Reply OK."   # lays .claude-plugin/types
+claude --plugin-dir "$PWD" -p "Reply OK."   # writes the API types to .claude-plugin/types
 claude plugin test . && claude plugin validate . && bunx -p typescript@5.6.3 tsc -p .
 ```
 
-MIT. Rubrics: [disler/ten-levels-of-jev](https://github.com/disler/ten-levels-of-jev).
+MIT license. The question rubrics come from [disler/ten-levels-of-jev](https://github.com/disler/ten-levels-of-jev).
