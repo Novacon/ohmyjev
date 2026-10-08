@@ -19,6 +19,7 @@
 </p>
 
 <p align="center">
+  <a href="https://ohmyjev.dev"><b>ohmyjev.dev</b></a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#what-you-get">What you get</a> ·
   <a href="#install">Install</a> ·
