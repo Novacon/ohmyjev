@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
   rawAbsolute, sanitizeSid, screen, statusText, type Answers,
+  BASH_Q, gateExfil, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
 const bash = (effect: string, confidence: number, destructive: number): Answers => ({
@@ -65,4 +66,17 @@ test('text and status', () => {
   expect(statusText(EMPTY_SESSION, 0)).toBe('jev ✓0')
   expect(statusText({ ...EMPTY_SESSION, downUntil: 10 }, 5)).toBe('jev ⚠ down')
   expect(statusText({ ...EMPTY_SESSION, noKey: true }, 0)).toBe('jev ⚠ no key')
+})
+
+test('exfil gate and policies', () => {
+  const pc = { ...c, policies: 'no deploys; never touch prod' }
+  expect(gateExfil(nouls({ exfiltrates: 0.7 }), c).verdict).toBe('deny')
+  expect(gateExfil(nouls({ exfiltrates: 0.69 }), c).verdict).toBe(null)
+  expect(gateExfil(nouls({ exfiltrates: 0.1, violates_policy: 0.7 }), pc).reason).toContain('breaks a listed policy (0.70)')
+  expect(gateBash({ ...bash('read_only', 0.9, 0), ...nouls({ violates_policy: 0.8 }) }, pc).reason).toContain('breaks a listed policy (0.80)')
+  expect(gateWrite({ ...write('docs', 0.9, 0), ...nouls({ violates_policy: 0.69 }) }, pc).verdict).toBe(null)
+  expect(withPolicyQ(BASH_Q, c)).toBe(BASH_Q) // empty policies: v1's questions exactly
+  expect(Object.keys(withPolicyQ(BASH_Q, pc))).toContain('violates_policy')
+  expect(withPolicies({ a: 1 }, c)).toEqual({ a: 1 })
+  expect(withPolicies({ a: 1 }, pc)).toEqual({ a: 1, policies: ['no deploys', 'never touch prod'] })
 })

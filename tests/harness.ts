@@ -82,8 +82,9 @@ export function harness(
     fake.requests.push({ url: e.url, body })
     const raw = answer(body.questions)
     if (raw === 'hang') return new Promise(() => {})
-    // gate tests rarely care about the screen that follows the tool: answer it "clean" unless the test did
-    const a = 'injection' in body.questions && !('injection' in raw) ? { injection: { type: 'noul', noul: 0 } } : raw
+    // gate tests rarely care about the exfil gate or the screen around the tool: answer them "clean" unless the test did
+    const a: Record<string, unknown> = { ...raw }
+    for (const k of ['injection', 'exfiltrates']) if (k in body.questions && !(k in a)) a[k] = { type: 'noul', noul: 0 }
     const status = opts.status ?? 200
     return { value: { status, ok: status < 400, headers: {}, text: JSON.stringify({ model: 'jev-1.13.0', answers: a, usage: { input_tokens: 100 } }) } }
   })

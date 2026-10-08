@@ -50,6 +50,18 @@
       "description": "Push back once when the agent claims done without verifying",
       "default": true
     },
+    "exfilGate": {
+      "type": "boolean",
+      "title": "Exfil gate",
+      "description": "Deny WebFetch and MCP calls that send local data, files or credentials out",
+      "default": true
+    },
+    "screenReads": {
+      "type": "boolean",
+      "title": "Screen Reads outside the repo",
+      "description": "Run the injection screen on files read from outside the repo",
+      "default": true
+    },
     "bashIrreversible": {
       "type": "number",
       "title": "Bash: irreversible confidence to deny",
@@ -80,6 +92,12 @@
       "description": "Flag tool output as an injection at this probability (0-1)",
       "default": 0.7
     },
+    "exfil": {
+      "type": "number",
+      "title": "Exfil probability to deny",
+      "description": "Deny when Jev rates the call as sending local data out at least this probable (0-1)",
+      "default": 0.7
+    },
     "doneClaimed": {
       "type": "number",
       "title": "Done-check: claimed-done at least",
@@ -103,6 +121,12 @@
       "title": "Allowed write paths outside the repo",
       "description": "Separated by ; (~ and $TMPDIR expand)",
       "default": "~/.claude;$TMPDIR;/tmp"
+    },
+    "policies": {
+      "type": "string",
+      "title": "Policies",
+      "description": "Your own rules every gate weighs, separated by ; (e.g. never touch prod; no deploys on Friday)",
+      "default": ""
     }
   }
 }

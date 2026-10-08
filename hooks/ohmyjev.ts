@@ -5,9 +5,9 @@
 import type { EngineInterface, Register, SessionMessage, ToolCallResult } from 'claude-code'
 import { ENDPOINTS, JevError, parseReply, pickKey } from './jev.ts'
 import {
-  BASH_Q, SCREEN_Q, STOP_Q, WRITE_Q,
-  EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateWrite, isUnder, judgeStop, normalize, rawAbsolute,
-  readConfig, sanitizeSid, screen, splitList,
+  BASH_Q, EXFIL_Q, SCREEN_Q, STOP_Q, WRITE_Q,
+  EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, isUnder, judgeStop, normalize, rawAbsolute,
+  readConfig, sanitizeSid, screen, splitList, withPolicies, withPolicyQ,
   type Config, type LogEntry, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -16,7 +16,7 @@ type Paths = { dir: string; log: string; session: string; sid: string }
 type Ctx = { p: Paths; s: SessionState }
 
 const WRITE_TOOLS = ['Write', 'Edit', 'NotebookEdit']
-const HOOKED = ['Bash', 'WebFetch', 'Write', 'Edit', 'NotebookEdit', /^mcp__/] as const
+const HOOKED = ['Bash', 'WebFetch', 'Read', 'Write', 'Edit', 'NotebookEdit', /^mcp__/] as const
 const DOWN_MS = 5 * 60_000
 const CLIP = 16000
 
@@ -195,7 +195,7 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
   if (tool === 'Bash' && c.bashGate) {
     const command = arg(e, 'command')
     const state = { command: clip(command, CLIP), cwd, description: clip(arg(e, 'description'), 300), ...(command.length > CLIP ? { truncated: true } : {}) }
-    const d = await decide($, 'tool.call', tool, state, BASH_Q)
+    const d = await decide($, 'tool.call', tool, withPolicies(state, c), withPolicyQ(BASH_Q, c))
     if (!d) return undefined
     const j = gateBash(d.answers, c)
     record($, d, j.verdict, j.reason)
@@ -212,20 +212,37 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
       return denyText(reason)
     }
     const content = arg(e, 'content') || arg(e, 'new_string') || arg(e, 'new_source')
-    const d = await decide($, 'tool.call', tool, { path, content: clip(content, CLIP) }, WRITE_Q)
+    const d = await decide($, 'tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c), withPolicyQ(WRITE_Q, c))
     if (!d) return undefined
     const j = gateWrite(d.answers, c)
+    record($, d, j.verdict, j.reason)
+    return j.verdict === 'deny' ? denyText(j.reason) : undefined
+  }
+  if ((tool === 'WebFetch' || tool.startsWith('mcp__')) && c.exfilGate) {
+    const { tool: _t, tool_use_id: _id, consent: _c, ...input } = e as Record<string, unknown>
+    const state = withPolicies({ tool, input: clip(JSON.stringify(input), 4000) }, c)
+    const d = await decide($, 'tool.call', tool, state, withPolicyQ(EXFIL_Q, c))
+    if (!d) return undefined
+    const j = gateExfil(d.answers, c)
     record($, d, j.verdict, j.reason)
     return j.verdict === 'deny' ? denyText(j.reason) : undefined
   }
   return undefined
 }
 
-// --- injection screen (after the tool ran): Bash, WebFetch, MCP ---
+// --- injection screen (after the tool ran): Bash, WebFetch, MCP, and Reads from outside the repo ---
+
+/** A Read is screened only from outside the repo: what lives in the repo is the user's own. */
+async function readOutsideRepo($: $, e: { tool: string }): Promise<boolean> {
+  if (!c.screenReads) return false
+  const home = (await $.env.get('HOME')) ?? ''
+  return !isUnder(absolute(arg(e, 'file_path'), await $.session.cwd(), home), normalize(await $.session.root()))
+}
 
 async function screenResult($: $, e: { tool: string }, r: ToolCallResult): Promise<ToolCallResult> {
   const tool = String(e.tool)
   if (!c.injectionScreen || WRITE_TOOLS.includes(tool) || r.deny !== undefined || !r.text?.trim()) return r
+  if (tool === 'Read' && !(await readOutsideRepo($, e))) return r
   const d = await decide($, 'tool.result', tool, { tool, content: clip(r.text, 6000) }, SCREEN_Q)
   if (!d) return r
   const s = screen(d.answers, c)
