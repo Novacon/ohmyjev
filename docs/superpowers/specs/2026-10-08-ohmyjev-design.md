@@ -1,3 +1,5 @@
+> **SUPERSEDED** by `docs/superpowers/specs/2026-10-08-ohmyjev-mod-design.md` (ohmyjev rebuilt as a Claude Code mod). Kept for history.
+
 # ohmyjev — design
 
 Date: 2026-10-08 · Status: approved in brainstorming, pending spec review
