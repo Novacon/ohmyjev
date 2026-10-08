@@ -46,6 +46,7 @@ export function harness(
   on('session.id', () => ({ value: 'test-session' }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('session.root', () => ({ value: '/repo' }))
+  on('classic.Stop', () => ({}))
   on('session.messages', () => ({ value: opts.messages ?? [] }))
   on('fs.stat', ($, e) => {
     if (e.path === DANGLING) return { value: { kind: 'other' as const, size: 0, mtimeMs: 0, isLink: true } }

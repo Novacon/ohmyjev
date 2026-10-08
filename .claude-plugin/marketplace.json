@@ -1,5 +1,14 @@
 {
   "name": "ohmyjev",
-  "owner": { "name": "lordknows13" },
-  "plugins": [{ "name": "ohmyjev", "source": "./", "description": "Jev-powered gates, injection screen and done-check" }]
+  "owner": {
+    "name": "lordknows13"
+  },
+  "description": "ohmyjev: Jev-decided guardrails for Claude Code",
+  "plugins": [
+    {
+      "name": "ohmyjev",
+      "source": "./",
+      "description": "Jev-powered gates, injection screen and done-check"
+    }
+  ]
 }
