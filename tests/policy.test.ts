@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
   rawAbsolute, sanitizeSid, screen, statusText, type Answers,
-  BASH_Q, gateExfil, withPolicies, withPolicyQ,
+  BASH_Q, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
 const bash = (effect: string, confidence: number, destructive: number): Answers => ({
@@ -79,4 +79,22 @@ test('exfil gate and policies', () => {
   expect(Object.keys(withPolicyQ(BASH_Q, pc))).toContain('violates_policy')
   expect(withPolicies({ a: 1 }, c)).toEqual({ a: 1 })
   expect(withPolicies({ a: 1 }, pc)).toEqual({ a: 1, policies: ['no deploys', 'never touch prod'] })
+})
+
+const route = (tier: string, tc: number, effort: number, ec: number, risky = 0): Answers => ({
+  tier: { type: 'choice', choice: tier, confidence: tc },
+  effort: { type: 'score', score: effort, confidence: ec },
+  risky: { type: 'noul', noul: risky },
+})
+
+test('router: up needs 0.3, down needs 0.6; risky forces deep and at least high', () => {
+  const step = { model: 'claude-sonnet-5-5', effort: 'medium' }
+  expect(routeStep(decideRoute(route('deep', 0.9, 3.2, 0.31), c), step, c)).toEqual({ patch: { effort: 'xhigh' }, label: '↑sonnet/xhigh' })
+  expect(routeStep(decideRoute(route('fast', 0.9, 0, 0.59), c), step, c).patch).toEqual({})
+  expect(routeStep(decideRoute(route('fast', 0.9, 0, 0.6), c), step, c).label).toBe('↓sonnet/low')
+  expect(decideRoute(route('fast', 0.9, 0, 0.9, 0.7), c)).toMatchObject({ tier: 'deep', effort: 'high' })
+  const main = { ...c, routeMainModel: true }
+  expect(routeStep(decideRoute(route('deep', 0.9, 2, 0.1), main), step, main)).toEqual({ patch: { model: 'claude-opus-5-5' }, label: '↑opus/medium' })
+  expect(routeStep(decideRoute(route('deep', 0.9, 2, 0.9), c), { model: 'x', effort: 7 }, c).patch).toEqual({}) // numeric effort untouched
+  expect(tierOf('some-new-model', c)).toBe('balanced')
 })

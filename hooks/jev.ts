@@ -38,6 +38,12 @@ export function validate(data: unknown, questions: Questions): Answers {
     if (q.type === 'noul') {
       if (!unit(a.noul)) throw new JevError(`${id}: noul is not a probability`)
       out[id] = { type: 'noul', noul: a.noul }
+    } else if (q.type === 'score') {
+      const top = q.criteria.length - 1
+      if (!(typeof a.score === 'number' && Number.isFinite(a.score) && a.score >= 0 && a.score <= top))
+        throw new JevError(`${id}: score is not within 0..${top}`)
+      if (a.confidence !== undefined && !unit(a.confidence)) throw new JevError(`${id}: confidence is not a probability`)
+      out[id] = a.confidence === undefined ? { type: 'score', score: a.score } : { type: 'score', score: a.score, confidence: a.confidence }
     } else {
       if (!(typeof a.choice === 'string' && Object.hasOwn(q.criteria, a.choice))) throw new JevError(`${id}: unknown choice label`)
       if (!unit(a.confidence)) throw new JevError(`${id}: confidence is not a probability`)

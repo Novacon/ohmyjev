@@ -5,10 +5,10 @@
 import type { EngineInterface, Register, SessionMessage, ToolCallResult } from 'claude-code'
 import { ENDPOINTS, JevError, parseReply, pickKey } from './jev.ts'
 import {
-  BASH_Q, EXFIL_Q, SCREEN_Q, STOP_Q, WRITE_Q,
+  BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, isUnder, judgeStop, normalize, rawAbsolute,
-  readConfig, sanitizeSid, screen, splitList, withPolicies, withPolicyQ,
-  type Config, type LogEntry, type Questions, type SessionState, type Verdict,
+  decideRoute, modelOf, readConfig, routeStep, sanitizeSid, screen, splitList, withPolicies, withPolicyQ,
+  type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
 type $ = EngineInterface
@@ -106,6 +106,7 @@ function appendLog($: $, p: Paths, entry: LogEntry): void {
 let c: Config = readConfig({})
 let ctx: Ctx | undefined
 let pushedBackAt = -1 // request count when the done-check last pushed back: once per request
+let route: Route | undefined // this turn's classification; undefined routes nothing
 
 async function session($: $): Promise<Ctx> {
   if (!ctx) {
@@ -250,10 +251,46 @@ async function screenResult($: $, e: { tool: string }, r: ToolCallResult): Promi
   return s.flagged ? { ...r, context: [...(r.context ?? []), s.note] } : r
 }
 
+// --- router: classify once per turn, then steer effort (main loop) and the subagent model ---
+
+async function classify($: $, text: string): Promise<void> {
+  route = undefined
+  if (!(c.routeEffort || c.routeSubagents || c.routeMainModel) || /^\/\S+\s*$/.test(text.trim())) return
+  const d = await decide($, 'turn.start', '', { request: clip(text, 1500) }, ROUTE_Q)
+  if (!d) return
+  route = decideRoute(d.answers, c)
+  record($, d, null, `${route.tier} (${route.tierConf.toFixed(2)}), ${route.effort} (${route.effortConf.toFixed(2)})`)
+}
+
+async function noteRoute($: $, label: string): Promise<void> {
+  const x = await session($)
+  if (x.s.lastRoute === label) return
+  x.s.lastRoute = label
+  writeSession($, x.p, x.s)
+}
+
 export const register: Register = (on, options) => {
   c = readConfig(options)
   ctx = undefined
   pushedBackAt = -1
+  route = undefined
+
+  on('turn.start', async ($, e, next) => {
+    await classify($, e.text)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('turn.step', async function* ($, e, next) {
+    if (!route || e.agentId) return yield* next(e)
+    const { patch, label } = routeStep(route, e, c)
+    await noteRoute($, label)
+    return yield* next({ ...e, ...patch })
+  })
+
+  on('agent.spawn', ($, e, next) => {
+    if (!route || !c.routeSubagents || e.model || e.subagentType === 'fork') return next(e)
+    return next({ ...e, model: modelOf(route.tier, c) })
+  })
 
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
     const denied = await gate($, e)
@@ -291,6 +328,7 @@ export const register: Register = (on, options) => {
   on('session.end', ($, e, next) => {
     ctx = undefined
     pushedBackAt = -1
+    route = undefined
     return next(e)
   })
 }

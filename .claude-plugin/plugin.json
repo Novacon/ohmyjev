@@ -116,6 +116,60 @@
       "description": "Skip when the reply asks the user something at or above this (0-1)",
       "default": 0.5
     },
+    "routeEffort": {
+      "type": "boolean",
+      "title": "Router: effort",
+      "description": "Raise or lower reasoning effort per turn from Jev's read of the request",
+      "default": true
+    },
+    "routeSubagents": {
+      "type": "boolean",
+      "title": "Router: subagent model",
+      "description": "Pick the subagent model (fast/balanced/deep) from the request",
+      "default": true
+    },
+    "routeMainModel": {
+      "type": "boolean",
+      "title": "Router: main model",
+      "description": "Also switch the main model per turn (discards the warm prompt cache)",
+      "default": false
+    },
+    "routeUpgrade": {
+      "type": "number",
+      "title": "Router: confidence to move up",
+      "description": "Raise effort or tier at this confidence or above (0-1)",
+      "default": 0.3
+    },
+    "routeDowngrade": {
+      "type": "number",
+      "title": "Router: confidence to move down",
+      "description": "Lower effort or tier at this confidence or above (0-1)",
+      "default": 0.6
+    },
+    "routeRisky": {
+      "type": "number",
+      "title": "Router: risky forces deep",
+      "description": "At this probability a request touching prod, money or credentials goes deep with at least high effort (0-1)",
+      "default": 0.7
+    },
+    "fastModel": {
+      "type": "string",
+      "title": "Fast model",
+      "description": "Model id for the fast tier",
+      "default": "claude-haiku-5-5"
+    },
+    "balancedModel": {
+      "type": "string",
+      "title": "Balanced model",
+      "description": "Model id for the balanced tier",
+      "default": "claude-sonnet-5-5"
+    },
+    "deepModel": {
+      "type": "string",
+      "title": "Deep model",
+      "description": "Model id for the deep tier",
+      "default": "claude-opus-5-5"
+    },
     "allowPaths": {
       "type": "string",
       "title": "Allowed write paths outside the repo",

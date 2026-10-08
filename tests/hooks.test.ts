@@ -2,6 +2,7 @@ import type { On, SessionMessage } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import { BLOCK_NOTICE, DONE_REASON } from '../hooks/policy.ts'
 import { bashAns, flush, harness, nouls, writeAns } from './harness.ts'
+import type { Answers } from '../hooks/policy.ts'
 
 /** A stand-in for the real tool, beneath the plugin: counts whether the call reached it. */
 function tool(on: On, text = 'ok') {
@@ -186,5 +187,55 @@ test('a Read from outside the repo is screened; one inside is not', async ($, on
   expect((await $.tool.call({ tool: 'Read', file_path: '/etc/motd' })).context?.at(-1)).toContain('(0.93)')
   expect(fake.requests.length).toBe(1)
   expect((await $.tool.call({ tool: 'Read', file_path: 'src/a.ts' })).context).toBe(undefined)
+  expect(fake.requests.length).toBe(1)
+})
+
+const routeAns = (tier: string, effort: number, conf: number): Answers => ({
+  tier: { type: 'choice', choice: tier, confidence: conf },
+  effort: { type: 'score', score: effort, confidence: conf },
+  risky: { type: 'noul', noul: 0 },
+})
+
+/** The model request beneath the plugin: records the effort and model it was sent with. */
+function model(on: On) {
+  const seen: { effort?: string | number; model?: string } = {}
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('turn.step', async function* ($, e) {
+    seen.effort = e.effort
+    seen.model = e.model
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
+  })
+  on('agent.spawn', ($, e) => ({ model: e.model ?? e.parentModel }))
+  return seen
+}
+const step = { turnId: 't1', index: 0, model: 'claude-sonnet-5-5', effort: 'medium' as const, messageCount: 1 }
+const drain = async (s: AsyncIterable<unknown>) => {
+  for await (const _ of s);
+}
+const spawnArgs = {
+  tool_use_id: 'u1', prompt: 'p', description: 'd', subagentType: 'general-purpose',
+  provider: { name: 'engine' }, parentModel: 'claude-sonnet-5-5',
+}
+
+test('the router raises effort and picks the subagent model for a deep request', async ($, on) => {
+  const fake = harness(on, () => routeAns('deep', 3, 0.9))
+  const seen = model(on)
+  await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
+  await drain($.turn.step(step))
+  expect(seen.effort).toBe('xhigh')
+  expect(seen.model).toBe('claude-sonnet-5-5') // routeMainModel is off
+  expect((await $.agent.spawn(spawnArgs as never)).model).toBe('claude-opus-5-5')
+  expect(fake.requests.length).toBe(1) // one classification per turn
+  await flush()
+  expect(JSON.parse(fake.files[STATE]!).lastRoute).toBe('↑sonnet/xhigh')
+})
+
+test('router: Jev down leaves the step as it was; a bare slash command is not classified', async ($, on) => {
+  const fake = harness(on, () => routeAns('deep', 3, 0.9), { status: 500 })
+  const seen = model(on)
+  await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
+  await drain($.turn.step(step))
+  expect(seen.effort).toBe('medium')
+  await $.turn.start({ text: '/clear', turnId: 't2' })
   expect(fake.requests.length).toBe(1)
 })

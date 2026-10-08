@@ -23,6 +23,15 @@ export const DEFAULTS = {
   doneVerifiedMax: 0.3,
   doneAsksUserMax: 0.5,
   exfil: 0.7,
+  routeEffort: true,
+  routeSubagents: true,
+  routeMainModel: false,
+  routeUpgrade: 0.3,
+  routeDowngrade: 0.6,
+  routeRisky: 0.7,
+  fastModel: 'claude-haiku-5-5',
+  balancedModel: 'claude-sonnet-5-5',
+  deepModel: 'claude-opus-5-5',
   allowPaths: '~/.claude;$TMPDIR;/tmp',
   policies: '',
 }
@@ -37,11 +46,13 @@ export const splitList = (s: string): string[] => s.split(';').map(x => x.trim()
 
 export type Noul = { type: 'noul'; noul: number }
 export type Choice = { type: 'choice'; choice: string; confidence: number }
-export type Answer = Noul | Choice
+export type Score = { type: 'score'; score: number; confidence?: number }
+export type Answer = Noul | Choice | Score
 export type Answers = Record<string, Answer>
 export type Question =
   | { type: 'noul'; instructions: string; criteria?: { true: string; false: string } }
   | { type: 'choice'; instructions: string; criteria: Record<string, string> }
+  | { type: 'score'; instructions: string; criteria: string[] }
 export type Questions = Record<string, Question>
 export type Verdict = 'deny' | 'block' | 'flag' | null
 export type Judged = { verdict: Verdict; reason: string }
@@ -49,6 +60,7 @@ export type Judged = { verdict: Verdict; reason: string }
 export const noul = (instructions: string, yes?: string, no?: string): Question =>
   yes ? { type: 'noul', instructions, criteria: { true: yes, false: no ?? '' } } : { type: 'noul', instructions }
 export const choice = (instructions: string, criteria: Record<string, string>): Question => ({ type: 'choice', instructions, criteria })
+export const score = (instructions: string, criteria: string[]): Question => ({ type: 'score', instructions, criteria })
 
 // --- questions (rubrics from ten-levels-of-jev level 6) ---
 
@@ -105,6 +117,21 @@ export const withPolicyQ = (q: Questions, c: Config): Questions => (splitList(c.
 export const withPolicies = <T extends object>(state: T, c: Config): T | (T & { policies: string[] }) => {
   const policies = splitList(c.policies)
   return policies.length ? { ...state, policies } : state
+}
+export const ROUTE_Q: Questions = {
+  tier: choice('What kind of work does `request` ask for?', {
+    fast: 'Mechanical or local: a lookup, rename, formatting, or a single obvious change',
+    balanced: 'Ordinary engineering: a feature, fix, or refactor with a clear plan',
+    deep: 'Hard or high-stakes: architecture, subtle bugs, security, concurrency, data migrations, unclear requirements',
+  }),
+  effort: score('How much step-by-step reasoning does `request` need?', [
+    'None: answer or act directly',
+    'A little: a short check before acting',
+    'Careful multi-step reasoning',
+    'Long careful reasoning that weighs alternatives',
+    'The hardest reasoning: every edge case matters',
+  ]),
+  risky: noul('Does `request` touch production, money, credentials, or irreversible state?'),
 }
 export const SCREEN_Q: Questions = {
   injection: noul(
@@ -195,6 +222,72 @@ export function judgeStop(a: Answers, c: Config): string | null {
   return unverified ? DONE_REASON : null
 }
 
+// --- router: model names are never shown to Jev ---
+
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+export type Effort = (typeof EFFORTS)[number]
+export const TIERS = ['fast', 'balanced', 'deep'] as const
+export type Tier = (typeof TIERS)[number]
+export type Route = { tier: Tier; tierConf: number; effort: Effort; effortConf: number }
+
+export function decideRoute(a: Answers, c: Config): Route {
+  const t = ch(a, 'tier')
+  const s = a.effort as Score
+  const level = Math.min(EFFORTS.length - 1, Math.max(0, Math.round(s.score)))
+  const route: Route = { tier: t.choice as Tier, tierConf: t.confidence, effort: EFFORTS[level] ?? 'medium', effortConf: s.confidence ?? 0 }
+  if (nv(a, 'risky') >= c.routeRisky) {
+    route.tier = 'deep'
+    route.tierConf = 1
+    if (EFFORTS.indexOf(route.effort) < EFFORTS.indexOf('high')) {
+      route.effort = 'high'
+      route.effortConf = 1
+    }
+  }
+  return route
+}
+
+/** The target when the move clears its bar (up: routeUpgrade, down: routeDowngrade), else undefined. */
+function pick<T extends string>(order: readonly T[], current: T, target: T, conf: number, c: Config): T | undefined {
+  const d = order.indexOf(target) - order.indexOf(current)
+  if (d > 0 && conf >= c.routeUpgrade) return target
+  if (d < 0 && conf >= c.routeDowngrade) return target
+  return undefined
+}
+
+export function tierOf(model: string, c: Config): Tier {
+  if (model === c.fastModel || /haiku/i.test(model)) return 'fast'
+  if (model === c.deepModel || /opus|fable/i.test(model)) return 'deep'
+  return 'balanced'
+}
+
+export const modelOf = (tier: Tier, c: Config): string => ({ fast: c.fastModel, balanced: c.balancedModel, deep: c.deepModel })[tier]
+
+const shortModel = (m: string): string => /haiku|sonnet|opus|fable/i.exec(m)?.[0]?.toLowerCase() ?? m
+
+/** What to change on a main-loop step, and a status label (`↑opus/high`) when anything moved. */
+export function routeStep(route: Route, step: { model: string; effort?: string | number }, c: Config) {
+  const patch: { model?: string; effort?: Effort } = {}
+  let dir = 0
+  const cur = step.effort
+  if (c.routeEffort && typeof cur === 'string' && (EFFORTS as readonly string[]).includes(cur)) {
+    const next = pick(EFFORTS, cur as Effort, route.effort, route.effortConf, c)
+    if (next) {
+      patch.effort = next
+      dir ||= Math.sign(EFFORTS.indexOf(next) - EFFORTS.indexOf(cur as Effort))
+    }
+  }
+  if (c.routeMainModel) {
+    const curTier = tierOf(step.model, c)
+    const t = pick(TIERS, curTier, route.tier, route.tierConf, c)
+    if (t) {
+      patch.model = modelOf(t, c)
+      dir ||= Math.sign(TIERS.indexOf(t) - TIERS.indexOf(curTier))
+    }
+  }
+  if (dir === 0) return { patch, label: '' }
+  return { patch, label: `${dir > 0 ? '↑' : '↓'}${shortModel(patch.model ?? step.model)}/${patch.effort ?? cur}` }
+}
+
 // --- paths (symlinks are resolved in ohmyjev.ts through $.fs.stat) ---
 
 export function normalize(abs: string): string {
@@ -230,8 +323,8 @@ export const isUnder = (target: string, root: string): boolean =>
 
 // --- status ---
 
-export type SessionState = { calls: number; denies: number; downUntil: number; noKey: boolean }
-export const EMPTY_SESSION: SessionState = { calls: 0, denies: 0, downUntil: 0, noKey: false }
+export type SessionState = { calls: number; denies: number; downUntil: number; noKey: boolean; lastRoute: string }
+export const EMPTY_SESSION: SessionState = { calls: 0, denies: 0, downUntil: 0, noKey: false, lastRoute: '' }
 
 export function statusText(s: SessionState, now: number): string {
   if (s.noKey) return 'jev ⚠ no key'

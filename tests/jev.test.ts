@@ -32,3 +32,11 @@ test('parseReply: non-2xx, non-JSON, usage', () => {
   expect(r.inputTokens).toBe(100)
   expect(r.answers.q).toEqual({ type: 'choice', choice: 'b', confidence: 0.5 })
 })
+
+test('score answers sit within the levels; confidence optional', () => {
+  const S = { s: { type: 'score' as const, instructions: 'x', criteria: ['lo', 'mid', 'hi'] } }
+  expect(() => validate({ answers: { s: { type: 'score', score: 9 } } }, S)).toThrow('0..2')
+  expect(() => validate({ answers: { s: { type: 'score', score: 1, confidence: -0.1 } } }, S)).toThrow('probability')
+  expect(validate({ answers: { s: { type: 'score', score: 1.4 } } }, S).s).toEqual({ type: 'score', score: 1.4 })
+  expect(validate({ answers: { s: { type: 'score', score: 2, confidence: 0.8, legend: {} } } }, S).s).toEqual({ type: 'score', score: 2, confidence: 0.8 })
+})
