@@ -3,6 +3,13 @@
 Date: 2026-10-08 · Status: approved in brainstorming, pending spec review
 **Supersedes** `2026-10-08-ohmyjev-design.md`, the Python command-hook plugin. Its rubrics, thresholds and failure policy carry over; the plumbing does not.
 
+> **v1 scope (decided 2026-10-08, after two review loops proved the full design overkill for a personal mod):**
+> - **v1 ships:** the Bash gate, the Write gate (with symlink-safe path placement), the injection screen on Bash, WebFetch and MCP output, the done-check, the statusline segment, and a best-effort log.
+> - **Moved to v2:** auto-approve, the exfil gate, policies, the router, auto-compact, `ask_jev`, `/jev`, pinned status, and screening of Reads.
+> - **Failure handling:** every error passes through. Storage is fire-and-forget.
+> - **Confirmed:** a middling answer passes through (not denied).
+> - **Source of truth:** the plan `docs/superpowers/plans/2026-10-08-ohmyjev-mod.md`. The sections below describe the full design that v2 can grow back into.
+
 ## Intent
 
 "oh-my-zsh for Jev": one install gives Claude Code a Jev decision layer, batteries included.
