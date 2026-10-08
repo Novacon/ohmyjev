@@ -23,6 +23,10 @@ export const DEFAULTS = {
   doneVerifiedMax: 0.3,
   doneAsksUserMax: 0.5,
   exfil: 0.7,
+  autoCompact: true,
+  compactSwitched: 0.8,
+  compactBoundary: 0.6,
+  compactMinPercent: 40,
   routeEffort: true,
   routeSubagents: true,
   routeMainModel: false,
@@ -54,7 +58,7 @@ export type Question =
   | { type: 'choice'; instructions: string; criteria: Record<string, string> }
   | { type: 'score'; instructions: string; criteria: string[] }
 export type Questions = Record<string, Question>
-export type Verdict = 'deny' | 'block' | 'flag' | null
+export type Verdict = 'deny' | 'block' | 'flag' | 'compact' | null
 export type Judged = { verdict: Verdict; reason: string }
 
 export const noul = (instructions: string, yes?: string, no?: string): Question =>
@@ -148,7 +152,14 @@ export const STOP_Q: Questions = {
     'Only claims success, edited without running or inspecting anything, or every check is pending, backgrounded or failed',
   ),
   asks_user: noul('Does `last_assistant_message` end by asking the user a question or reporting a blocker it cannot resolve?'),
+  at_boundary: noul('Did the last turn finish a unit of work rather than stop mid-step?'),
 }
+export const SWITCHED_Q: Questions = {
+  switched_gears: noul('Is `current_request` a different task from `previous_requests`, so the earlier work is no longer needed?'),
+}
+/** What a compaction must keep: the live request in detail, the rest in a few lines. */
+export const keepInstructions = (request: string): string =>
+  `The task changed. Keep the current request and everything needed for it in detail: "${request}". Summarize earlier work in a few lines.`
 
 // --- helpers ---
 
@@ -215,11 +226,12 @@ export function screen(a: Answers, c: Config): { flagged: boolean; reason: strin
   }
 }
 
-/** DONE_REASON when the agent claims done with no sign of a check and no question for the user; else null. */
-export function judgeStop(a: Answers, c: Config): string | null {
+/** The done-check (DONE_REASON when done is claimed with no sign of a check or question) and the compact verdict. */
+export function judgeStop(a: Answers, c: Config): { block: string | null; wantsCompact: boolean } {
   const unverified =
     nv(a, 'claimed_done') >= c.doneClaimed && nv(a, 'verified') < c.doneVerifiedMax && nv(a, 'asks_user') < c.doneAsksUserMax
-  return unverified ? DONE_REASON : null
+  const wantsCompact = nv(a, 'switched_gears') >= c.compactSwitched && nv(a, 'at_boundary') >= c.compactBoundary
+  return { block: unverified ? DONE_REASON : null, wantsCompact }
 }
 
 // --- router: model names are never shown to Jev ---
@@ -323,8 +335,8 @@ export const isUnder = (target: string, root: string): boolean =>
 
 // --- status ---
 
-export type SessionState = { calls: number; denies: number; downUntil: number; noKey: boolean; lastRoute: string }
-export const EMPTY_SESSION: SessionState = { calls: 0, denies: 0, downUntil: 0, noKey: false, lastRoute: '' }
+export type SessionState = { calls: number; denies: number; downUntil: number; noKey: boolean; lastRoute: string; compactions: number }
+export const EMPTY_SESSION: SessionState = { calls: 0, denies: 0, downUntil: 0, noKey: false, lastRoute: '', compactions: 0 }
 
 export function statusText(s: SessionState, now: number): string {
   if (s.noKey) return 'jev ⚠ no key'

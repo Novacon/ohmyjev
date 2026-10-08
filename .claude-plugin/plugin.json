@@ -116,6 +116,30 @@
       "description": "Skip when the reply asks the user something at or above this (0-1)",
       "default": 0.5
     },
+    "autoCompact": {
+      "type": "boolean",
+      "title": "Auto-compact",
+      "description": "Compact when Jev sees the task change at a natural boundary, keeping the new request in detail",
+      "default": true
+    },
+    "compactSwitched": {
+      "type": "number",
+      "title": "Auto-compact: task-switch probability",
+      "description": "Compact when the request switched tasks at least this probable (0-1)",
+      "default": 0.8
+    },
+    "compactBoundary": {
+      "type": "number",
+      "title": "Auto-compact: boundary probability",
+      "description": "…and the last turn finished a unit of work at least this probable (0-1)",
+      "default": 0.6
+    },
+    "compactMinPercent": {
+      "type": "number",
+      "title": "Auto-compact: minimum context %",
+      "description": "Only compact once the context is at least this full (0-100)",
+      "default": 40
+    },
     "routeEffort": {
       "type": "boolean",
       "title": "Router: effort",

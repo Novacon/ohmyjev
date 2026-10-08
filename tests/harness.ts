@@ -8,6 +8,7 @@ export type Fake = {
   files: Record<string, string>
   ran: string[][]
   stops: number
+  compacts: Array<string | undefined>
 }
 
 const DIRS = new Set(['/', '/repo', '/repo/src', '/home', '/home/u', '/home/u/.claude', '/home/u/.ohmyjev',
@@ -42,7 +43,7 @@ export function harness(
   answer: (questions: Record<string, unknown>) => Answers | 'hang',
   opts: { status?: number; messages?: SessionMessage[] | 'throw'; env?: Record<string, string>; writeHangs?: boolean } = {},
 ): Fake {
-  const fake: Fake = { requests: [], logs: [], files: {}, ran: [], stops: 0 }
+  const fake: Fake = { requests: [], logs: [], files: {}, ran: [], stops: 0, compacts: [] }
   mock.env(on, opts.env ?? { HOME: '/home/u', TMPDIR: '/tmp', TYPESAFE_API_KEY: 'ts-test' })
   on('session.id', () => ({ value: 'test-session' }))
   on('session.cwd', () => ({ value: '/repo' }))
@@ -50,6 +51,11 @@ export function harness(
   on('classic.Stop', () => {
     fake.stops++ // the user's own Stop hooks, beneath the plugin
     return {}
+  })
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('session.compact', ($, e) => {
+    fake.compacts.push(e.instructions)
+    return { skip: 'test' }
   })
   on('session.messages', () => {
     if (opts.messages === 'throw') throw new Error('messages unavailable')

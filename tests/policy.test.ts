@@ -39,10 +39,13 @@ test('injection screen', () => {
 
 test('done-check judge', () => {
   const base = { claimed_done: 0.8, verified: 0.1, asks_user: 0.1 }
-  expect(judgeStop(nouls(base), c)).toBe(DONE_REASON)
-  expect(judgeStop(nouls({ ...base, verified: 0.3 }), c)).toBe(null)
-  expect(judgeStop(nouls({ ...base, asks_user: 0.5 }), c)).toBe(null)
-  expect(judgeStop(nouls({ ...base, claimed_done: 0.69 }), c)).toBe(null)
+  expect(judgeStop(nouls(base), c).block).toBe(DONE_REASON)
+  expect(judgeStop(nouls({ ...base, verified: 0.3 }), c).block).toBe(null)
+  expect(judgeStop(nouls({ ...base, asks_user: 0.5 }), c).block).toBe(null)
+  expect(judgeStop(nouls({ ...base, claimed_done: 0.69 }), c).block).toBe(null)
+  expect(judgeStop(nouls({ ...base, switched_gears: 0.8, at_boundary: 0.6 }), c).wantsCompact).toBe(true)
+  expect(judgeStop(nouls({ ...base, switched_gears: 0.79, at_boundary: 0.9 }), c).wantsCompact).toBe(false)
+  expect(judgeStop(nouls({ ...base, at_boundary: 0.9 }), c).wantsCompact).toBe(false) // no previous request: never asked
 })
 
 test('paths', () => {

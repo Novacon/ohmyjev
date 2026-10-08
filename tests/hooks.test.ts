@@ -122,7 +122,7 @@ test('batteries off make no calls', { options: { bashGate: false, injectionScree
 })
 
 const msg = (role: 'user' | 'assistant', text: string, uses: SessionMessage['toolUses'] = []): SessionMessage => ({ role, text, toolUses: uses })
-const stopAns = (v: Record<string, number>) => nouls({ claimed_done: 0.1, verified: 0.9, asks_user: 0, ...v })
+const stopAns = (v: Record<string, number>) => nouls({ claimed_done: 0.1, verified: 0.9, asks_user: 0, at_boundary: 0, switched_gears: 0, ...v })
 
 test('done-check pushes back once per request, with each tool call and its outcome (Review Focus #4)', async ($, on) => {
   const messages = [
@@ -238,4 +238,35 @@ test('router: Jev down leaves the step as it was; a bare slash command is not cl
   expect(seen.effort).toBe('medium')
   await $.turn.start({ text: '/clear', turnId: 't2' })
   expect(fake.requests.length).toBe(1)
+})
+
+const measure = (percent: number) => ({ context: { window: 200000, percent }, rateLimits: [], changed: [] })
+const switched = [
+  msg('user', 'fix the login bug'),
+  msg('assistant', 'Fixed; tests pass.'),
+  msg('user', 'now write the release notes'),
+  msg('assistant', 'Here are the notes.'),
+]
+
+test('a task switch at a boundary compacts once, only past 40% (Review Focus v2 #2)', async ($, on) => {
+  const fake = harness(on, () => stopAns({ switched_gears: 0.9, at_boundary: 0.8 }), { messages: switched })
+  await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Here are the notes.' })
+  expect(Object.keys(fake.requests[0]!.body.questions)).toContain('switched_gears')
+  await $.session.measure(measure(30))
+  expect(fake.compacts.length).toBe(0)
+  await $.session.measure(measure(50))
+  await flush()
+  expect(fake.compacts).toEqual([expect.stringContaining('now write the release notes')])
+  await $.session.measure(measure(60))
+  await flush()
+  expect(fake.compacts.length).toBe(1)
+  expect(JSON.parse(fake.files[STATE]!).compactions).toBe(1)
+})
+
+test('the engine\'s own auto compaction keeps the live request', async ($, on) => {
+  const fake = harness(on, () => stopAns({}), { messages: switched })
+  await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Here are the notes.' })
+  await $.session.compact({ trigger: 'auto', instructions: 'be brief', messages: switched })
+  expect(fake.compacts[0]).toContain('be brief')
+  expect(fake.compacts[0]).toContain('now write the release notes')
 })

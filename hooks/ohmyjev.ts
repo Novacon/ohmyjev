@@ -5,9 +5,9 @@
 import type { EngineInterface, Register, SessionMessage, ToolCallResult } from 'claude-code'
 import { ENDPOINTS, JevError, parseReply, pickKey } from './jev.ts'
 import {
-  BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, WRITE_Q,
+  BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, isUnder, judgeStop, normalize, rawAbsolute,
-  decideRoute, modelOf, readConfig, routeStep, sanitizeSid, screen, splitList, withPolicies, withPolicyQ,
+  decideRoute, keepInstructions, modelOf, readConfig, routeStep, sanitizeSid, screen, splitList, withPolicies, withPolicyQ,
   type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -107,6 +107,8 @@ let c: Config = readConfig({})
 let ctx: Ctx | undefined
 let pushedBackAt = -1 // request count when the done-check last pushed back: once per request
 let route: Route | undefined // this turn's classification; undefined routes nothing
+let liveRequest = '' // the latest request the Stop hook saw: what any compaction must keep
+let compactPending = false // a task switch at a boundary, waiting for the context to fill past compactMinPercent
 
 async function session($: $): Promise<Ctx> {
   if (!ctx) {
@@ -274,6 +276,8 @@ export const register: Register = (on, options) => {
   ctx = undefined
   pushedBackAt = -1
   route = undefined
+  liveRequest = ''
+  compactPending = false
 
   on('turn.start', async ($, e, next) => {
     await classify($, e.text)
@@ -290,7 +294,7 @@ export const register: Register = (on, options) => {
   on('agent.spawn', ($, e, next) => {
     if (!route || !c.routeSubagents || e.model || e.subagentType === 'fork') return next(e)
     return next({ ...e, model: modelOf(route.tier, c) })
-  })
+  }).catch(($, e, next) => next(e))
 
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
     const denied = await gate($, e)
@@ -302,7 +306,7 @@ export const register: Register = (on, options) => {
 
   on('classic.Stop', async ($, e, next) => {
     const r = await next(e)
-    if (e.stop_hook_active || !c.doneCheck) return r
+    if (e.stop_hook_active || !(c.doneCheck || c.autoCompact)) return r
     const msgs: SessionMessage[] = await $.session.messages()
     const isRequest = (m: SessionMessage) => m.role === 'user' && m.text.trim() !== ''
     const requests = msgs.filter(isRequest)
@@ -317,18 +321,44 @@ export const register: Register = (on, options) => {
         .slice(-20),
       last_assistant_message: clip(e.last_assistant_message ?? msgs.filter(m => m.role === 'assistant').at(-1)?.text, 1500),
     }
-    const d = await decide($, 'Stop', '', state, STOP_Q)
+    liveRequest = state.current_request
+    const questions = state.previous_requests.length ? { ...STOP_Q, ...SWITCHED_Q } : STOP_Q
+    const d = await decide($, 'Stop', '', state, questions)
     if (!d) return r
-    const block = judgeStop(d.answers, c)
+    const j = judgeStop(d.answers, c)
+    const block = c.doneCheck ? j.block : null
     if (block) pushedBackAt = requests.length
-    record($, d, block ? 'block' : null, block ?? 'stop ok')
+    if (c.autoCompact && j.wantsCompact) compactPending = true
+    record($, d, block ? 'block' : null, block ?? (j.wantsCompact ? 'task switched' : 'stop ok'))
     return block ? { ...r, block } : r
+  })
+
+  // --- auto-compact: after a turn, once the task switched and the context is full enough ---
+
+  on('session.measure', async ($, e, next) => {
+    if (c.autoCompact && compactPending && (e.context.percent ?? 0) >= c.compactMinPercent) {
+      compactPending = false
+      const x = await session($)
+      x.s.compactions++
+      writeSession($, x.p, x.s)
+      appendLog($, x.p, { ts: Date.now(), session: x.p.sid, event: 'session.measure', tool: '', verdict: 'compact', reason: `${e.context.percent}% after a task switch` })
+      void $.session.compact({ instructions: keepInstructions(liveRequest) }).catch(() => undefined) // never awaited inside the hook
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  /** The engine's own threshold compaction keeps the live request too. */
+  on('session.compact', ($, e, next) => {
+    if (e.trigger !== 'auto' || !liveRequest) return next(e)
+    return next({ ...e, instructions: [e.instructions, keepInstructions(liveRequest)].filter(Boolean).join('\n\n') })
   })
 
   on('session.end', ($, e, next) => {
     ctx = undefined
     pushedBackAt = -1
     route = undefined
+    liveRequest = ''
+    compactPending = false
     return next(e)
   })
 }
