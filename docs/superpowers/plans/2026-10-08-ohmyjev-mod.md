@@ -29,8 +29,8 @@ The repo is its own marketplace.
 1. **List settings are text.** `/config` fields are boolean, choice, text or number, with no lists. So `policies` and `allowPaths` are `;`-separated text fields, parsed with `splitList`.
 2. **Subagent effort is not routed.** Subagent `turn.step`s carry their own `turnId`, so the per-turn route can't follow them. Subagents get their **model** routed at `agent.spawn` by classifying the subagent's own prompt.
 3. **Settings hooks keep running.** The `classic.Stop` and `classic.PreToolUse` hooks call `next(e)` **first**, so the user's own settings hooks (Orca, herdr) still run. They then add `block` or `allow` on top.
-4. **Log lines are awaited.** They're appended with `$.process.run(['sh','-c','cat >> "$0"', path], { stdin })`. That's a few ms per decision, and it keeps tests deterministic.
-5. **`ask_jev` fan-out has one deadline.** With `each`, the fan-out runs under a single 8 s deadline, not one timer per file. Clock sleeps count against the hook's 10 s budget.
+4. **Log lines are awaited, one file per session.** They're appended with `$.process.run(['sh','-c','cat >> "$0"', path], { stdin })` to `~/.ohmyjev/log/<session>.jsonl`, so parallel sessions never share a file and records can't interleave (`cat` writes stdin chunk by chunk, so a shared file would not be safe). That's a few ms per decision, and it keeps tests deterministic. `/jev` merges the last 8 days of files.
+5. **`ask_jev` fan-out has one deadline and bounded concurrency.** With `each`, at most 8 files are in flight at once under a single 8 s deadline (clock sleeps count against the hook's 10 s budget). At the deadline the answers already in hand are returned, the rest read `{ "error": "timeout" }`, the outage is logged and the session is marked down. One 8 s budget covers glob expansion, file reads and the asks together (the clock pauses for the command); nothing is dispatched once it is spent, and whatever was not answered says so. `ask_jev` also asks the engine's own permission verdict (`$.tool.check`) for the Bash command and for every file it reads, and proceeds only on `allow`. That covers the session's mode and its allow/ask/deny rules. Settings `PreToolUse` hooks and a subagent's tool restrictions run only on a real tool call and are **not** consulted: routing the command through `$.tool.call('Bash')` would consult them, but whether a plugin's own tool call lands in the model's transcript is undocumented, and that would defeat the tool's purpose; Task 8 probes it. Files are read before any command runs, and every result after a command executed carries `ran: { command, exitCode }`.
 6. **Validation follows plugin-dev.** The plugin-dev `create-plugin` workflow's validation and testing phases (6–8) are folded into Task 7: the plugin-validator review, a `--plugin-dir` test checklist, and README and marketplace completeness.
 
 ## Global Constraints
@@ -39,9 +39,10 @@ The repo is its own marketplace.
 - **Modules:**
   - Hooks modules are ES modules with **no** `import()`, no Node built-ins and no npm packages. Everything outside goes through `$`.
   - Plugin files import each other with explicit `.ts` suffixes (`import { x } from './policy.ts'`).
+- **Decision bands** (every gate): **deny** when Jev's answer clears a deny threshold (e.g. irreversible ≥ 0.6 or destructive ≥ 0.7 for Bash, or `violates_policy` ≥ 0.7 on any gate); **auto-approve** (Bash only) when confidently safe; **pass-through** otherwise, meaning Claude Code's normal permission flow decides (in bypass mode the call runs). Pass-through is never a silent allow by ohmyjev: it adds no `allow`.
 - **Failure policy:**
   - Never return an `ask` decision.
-  - When Jev is unsure (deny band), deny with a reason ending in `BLOCK_NOTICE`.
+  - When a gate's deny threshold is met, deny with a reason ending in `BLOCK_NOTICE`.
   - When Jev is unreachable, slower than 1500 ms, returns non-2xx, a malformed body or an unknown choice label: pass through, log it, and set `downUntil = now + 300000`.
   - With no key: pass through, set `noKey`, and log once.
   - Every gating registration has a `.catch` that logs and returns `next(e)`.
@@ -50,15 +51,15 @@ The repo is its own marketplace.
   - OpenRouter: `https://openrouter.ai/api/alpha/decisions`, model `~typesafe/jev-latest`.
   - Key order: `apiKey` → `$TYPESAFE_API_KEY` → `$OPENROUTER_API_KEY`.
 - **Clip sizes:**
-  - Bash command 4000. Write content 4000. Exfil input 4000. Tool output 6000.
+  - Bash command 16000. Write content 16000. Exfil input 16000. Tool output 6000. A gate input that had to be clipped carries `truncated: true` in the state sent to Jev, and a truncated Bash command is **never auto-approved** (its `allow` verdict is downgraded to pass-through).
   - Stop: current request 600, last assistant message 1500, each previous request 200 (up to 5).
   - Router request 1500.
   - `ask_jev`: each file 8000, all files 80000, command output 20000. Files over 1,000,000 bytes or containing NUL are skipped. At most 255 files.
-- **State:** `~/.ohmyjev/log.jsonl` and `~/.ohmyjev/sessions/<sanitized id>.json`. Session ids are sanitized to `[A-Za-z0-9_-]`, with `unknown` if empty. No payloads are logged unless `logPayloads`.
+- **State:** `~/.ohmyjev/log/<sanitized id>.jsonl` (one audit file per session) and `~/.ohmyjev/sessions/<sanitized id>.json`. Session ids are sanitized to `[A-Za-z0-9_-]`, with `unknown` if empty. No payloads are logged unless `logPayloads`. A record over 60000 encoded bytes is replaced by a minimal one. Work that settles after a `/clear` or resume (a new session generation) never writes to the new session's log or state.
 - **`BLOCK_NOTICE`, verbatim:** "This block is final. Do not try to work around it with another command, another tool, a different path, or an encoding that does the same thing. Stop and tell the user what was blocked and why."
 - **`DONE_REASON`, verbatim:** "You said this is done but nothing shows it was verified. Run the check, or say explicitly why it can't be verified."
 - **Defaults:**
-  - **Thresholds:** bashIrreversible 0.6, bashDestructive 0.7, approveConfidence 0.9, approveDestructiveMax 0.2, writeSecret 0.7, writeSecretsKind 0.8, exfil 0.7, injection 0.7, doneClaimed 0.7, doneVerifiedMax 0.3, doneAsksUserMax 0.5, compactSwitched 0.8, compactBoundary 0.6, compactMinPercent 40, routeUpgrade 0.3, routeDowngrade 0.6, routeRisky 0.7.
+  - **Thresholds:** bashIrreversible 0.6, bashDestructive 0.7, approveConfidence 0.9, approveDestructiveMax 0.2, writeSecret 0.7, writeSecretsKind 0.8, exfil 0.7, injection 0.7, doneClaimed 0.7, doneVerifiedMax 0.3, doneAsksUserMax 0.5, compactSwitched 0.8, compactBoundary 0.6, compactMinPercent 40, routeUpgrade 0.3, routeDowngrade 0.6, routeRisky 0.7, policyViolation 0.7.
   - **Router tiers:** fast `claude-haiku-5-5`, balanced `claude-sonnet-5-5`, deep `claude-opus-5-5`.
   - **Batteries on:** bashGate, writeGate, exfilGate, autoApprove, injectionScreen, doneCheck, autoCompact, routeEffort, routeSubagents.
   - **Batteries off:** screenRepoReads, routeMainModel, pinnedStatus, logPayloads.
@@ -70,10 +71,10 @@ The repo is its own marketplace.
 
 ## Review Focus
 
-1. **Gates must still work when the session is in bypass-permissions mode.** The user runs that way. Pinned by Task 8's canary run under `--permission-mode bypassPermissions`.
-2. **Auto-approve must never beat a settings `deny` rule.** Pinned by Task 8's acceptance run. If it fails, the battery is removed in that task.
+1. **Gates must still work when the session is in bypass-permissions mode.** The user runs that way. Pinned by Task 8 Step 3: first a deterministic canary (a write outside the repo, denied in code with no Jev call), then the live `rm -rf` canary, each read against the session's own log so a Jev outage is never mistaken for a missing hook.
+2. **Auto-approve must never beat a settings `deny` rule, and must never approve input it did not judge.** Pinned by Task 8's acceptance run (if it fails, the battery is removed in that task) and by Task 2's `mergeApproval` table: a settings hook that returns `updatedInput` gets no `allow`. `ask_jev` must honour the same deny rules: pinned by Task 6's `tool.check` tests and Task 8 Step 4's `ask_jev` case.
 3. **Jev hanging or erroring must never stall or block a tool.** Pinned in Task 4: `test('jev hang passes through after 1500ms')`, `test('http 500 passes through and marks down')`, `test('unknown choice label passes through')`.
-4. **Write paths with `..`, `~` and macOS `/tmp` aliasing must resolve before the allow check.** Pinned in Task 2's `absolute`/`expandRoot`/`isUnder` tables and Task 4's `test('write outside repo denied without a Jev call')` / `test('write to ~/.claude allowed')`.
+4. **Write paths with `..`, `~`, symlinks and macOS `/tmp` aliasing must resolve before the allow check, and an unresolvable path (dangling link, `realPath` withheld) is denied.** Pinned in Task 2's `absolute`/`expandRoot`/`isUnder` tables and Task 4's `test('write outside repo denied without a Jev call')`, `test('write through a dangling symlink denied')`, `test('write to ~/.claude allowed')`.
 5. **Huge tool output and odd session ids must not break anything.** Pinned in Task 4's `test('1 MB write content is clipped')` and Task 2's `sanitizeSid` table.
 
 ## File Structure
@@ -137,7 +138,7 @@ The old Python files (`plugins/ohmyjev/…`) were never built. Nothing needs del
     "routeSubagents": { "type": "boolean", "title": "Route subagent models", "description": "Pick each subagent's model tier", "default": true },
     "routeMainModel": { "type": "boolean", "title": "Route main model", "description": "Switch the main model per turn (drops the prompt cache)", "default": false },
     "pinnedStatus": { "type": "boolean", "title": "Pinned status line", "description": "Also show ohmyjev status under the prompt", "default": false },
-    "logPayloads": { "type": "boolean", "title": "Log payloads", "description": "Write commands and contents into ~/.ohmyjev/log.jsonl", "default": false },
+    "logPayloads": { "type": "boolean", "title": "Log payloads", "description": "Write commands and contents into the session's ~/.ohmyjev/log/<session>.jsonl", "default": false },
     "bashIrreversible": { "type": "number", "title": "Bash: irreversible confidence to deny", "default": 0.6 },
     "bashDestructive": { "type": "number", "title": "Bash: destructive-intent to deny", "default": 0.7 },
     "approveConfidence": { "type": "number", "title": "Auto-approve: safe confidence", "default": 0.9 },
@@ -155,6 +156,7 @@ The old Python files (`plugins/ohmyjev/…`) were never built. Nothing needs del
     "routeUpgrade": { "type": "number", "title": "Router: confidence to raise", "default": 0.3 },
     "routeDowngrade": { "type": "number", "title": "Router: confidence to lower", "default": 0.6 },
     "routeRisky": { "type": "number", "title": "Router: risky probability forcing deep", "default": 0.7 },
+    "policyViolation": { "type": "number", "title": "Policy violation probability to deny", "default": 0.7 },
     "fastModel": { "type": "string", "title": "Fast tier model", "default": "claude-haiku-5-5" },
     "balancedModel": { "type": "string", "title": "Balanced tier model", "default": "claude-sonnet-5-5" },
     "deepModel": { "type": "string", "title": "Deep tier model", "default": "claude-opus-5-5" },
@@ -277,6 +279,7 @@ export const DEFAULTS = {
   routeUpgrade: 0.3,
   routeDowngrade: 0.6,
   routeRisky: 0.7,
+  policyViolation: 0.7,
   fastModel: 'claude-haiku-5-5',
   balancedModel: 'claude-sonnet-5-5',
   deepModel: 'claude-opus-5-5',
@@ -310,7 +313,7 @@ Run: `claude --plugin-dir "$PWD" -p "Reply with the single word OK."`
 Expected: `OK`. `.claude-plugin/types/claude-code/index.d.ts` now exists, laid by the engine.
 
 Run: `claude plugin validate .`
-Expected: `✔ Validation passed`. The marketplace, the manifest with 37 userConfig fields, and the hooks module (which hooks nothing yet) are all valid.
+Expected: `✔ Validation passed`. The marketplace, the manifest with 38 userConfig fields, and the hooks module (which hooks nothing yet) are all valid.
 
 Run: `bunx -p typescript@5.6.3 tsc -p .`
 Expected: no output, exit 0.
@@ -337,8 +340,8 @@ git commit -m "feat: ohmyjev mod scaffold, userConfig, and tooling"
 - Consumes: `Config`, `DEFAULTS`, `splitList` (Task 1).
 - Produces:
   - **Types:** `Noul`, `Choice`, `Score`, `Answer`, `Answers`, `Question`, `Questions`, `Verdict` (`'deny'|'allow'|'block'|'flag'|'route'|null`), `Judged`, `Effort`, `Tier`, `Route`, `StepPatch`, `SessionState`, `LogEntry`.
-  - **Question helpers and sets:** `noul(i, yes?, no?)`, `choice(i, criteria)`, `score(i, levels)`, `BASH_Q`, `WRITE_Q`, `EXFIL_Q`, `SCREEN_Q`, `STOP_Q`, `SWITCHED_Q`, `ROUTE_Q`, `BLOCK_NOTICE`, `DONE_REASON`.
-  - **Text helpers:** `clip(text, n)`, `sanitizeSid(sid)`, `withPolicies(state, c)`, `denyText(reason)`, `compactInstructions(request)`, `isBareCommand(text)`.
+  - **Question helpers and sets:** `noul(i, yes?, no?)`, `choice(i, criteria)`, `score(i, levels)`, `BASH_Q`, `WRITE_Q`, `EXFIL_Q`, `SCREEN_Q`, `STOP_Q`, `SWITCHED_Q`, `ROUTE_Q`, `POLICY_Q`, `withPolicyQ(questions, c)` (adds `violates_policy` only when policies exist), `BLOCK_NOTICE`, `DONE_REASON`.
+  - **Text helpers:** `clip(text, n)`, `sanitizeSid(sid)`, `withPolicies(state, c)`, `denyText(reason)`, `keepInstructions(request)`, `compactInstructions(request)`, `isBareCommand(text)`, `mergeApproval(result, eligible)`.
   - **Judges:** `gateBash(a, c): Judged` (verdict `deny`, `allow` meaning eligible for auto-approve, or `null`), `gateWrite(a, c): Judged`, `gateExfil(a, c): Judged`, `screen(a, c): { flagged, reason, note }`, `judgeStop(a, c): { block: string|null, wantsCompact: boolean }`.
   - **Router:** `EFFORTS`, `TIERS`, `decideRoute(a, c): Route`, `pick(order, current, target, conf, c)`, `tierOf(model, c)`, `modelOf(tier, c)`, `routeStep(route, step, c): { patch, label }`.
   - **Paths:** `normalize(abs)`, `absolute(p, cwd, home)`, `expandRoot(p, home, tmpdir)`, `isUnder(target, root)`.
@@ -351,8 +354,9 @@ git commit -m "feat: ohmyjev mod scaffold, userConfig, and tooling"
 ```ts
 import { expect, test } from 'claude-code/testing'
 import {
-  DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, decideRoute, expandRoot, gateBash, gateExfil, gateWrite,
-  isBareCommand, isUnder, judgeStop, pick, routeStep, sanitizeSid, screen, statusText, summarize, tierOf, withPolicies,
+  BASH_Q, DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, compactInstructions, decideRoute, expandRoot, gateBash,
+  gateExfil, gateWrite, isBareCommand, isUnder, judgeStop, keepInstructions, mergeApproval, pick, routeStep, sanitizeSid, screen,
+  statusText, summarize, tierOf, withPolicies, withPolicyQ,
   type Answers, type Route,
 } from '../hooks/policy.ts'
 
@@ -392,6 +396,32 @@ test('write and exfil gates', () => {
   expect(gateExfil(nouls({ exfiltrates: 0.69 }), c).verdict).toBe(null)
 })
 
+test('policy violation denies on every gate; the question exists only with policies', () => {
+  const pc = { ...c, policies: 'never touch prod' }
+  expect('violates_policy' in withPolicyQ(BASH_Q, c)).toBe(false)
+  expect('violates_policy' in withPolicyQ(BASH_Q, pc)).toBe(true)
+  const viol = { violates_policy: { type: 'noul' as const, noul: 0.7 } }
+  expect(gateBash({ ...bash('read_only', 0.99, 0), ...viol }, pc).verdict).toBe('deny')
+  expect(gateBash({ ...bash('read_only', 0.99, 0), ...viol }, pc).reason).toContain('violates a policy (0.70)')
+  expect(gateBash({ ...bash('read_only', 0.99, 0), violates_policy: { type: 'noul', noul: 0.69 } }, pc).verdict).toBe('allow')
+  expect(gateWrite({ ...write('docs', 0.9, 0), ...viol }, pc).verdict).toBe('deny')
+  expect(gateExfil({ ...nouls({ exfiltrates: 0 }), ...viol }, pc).verdict).toBe('deny')
+})
+
+test('mergeApproval adds allow only to an untouched pass', () => {
+  expect(mergeApproval({}, true)).toEqual({ allow: true })
+  expect(mergeApproval({}, false)).toEqual({})
+  expect(mergeApproval({ deny: 'no' }, true)).toEqual({ deny: 'no' })
+  expect(mergeApproval({ ask: 'sure?' }, true)).toEqual({ ask: 'sure?' })
+  expect(mergeApproval({ updatedInput: { command: 'rm -rf /' } }, true)).toEqual({ updatedInput: { command: 'rm -rf /' } })
+})
+
+test('compaction instruction texts', () => {
+  expect(compactInstructions('write docs')).toContain('The task changed')
+  expect(keepInstructions('write docs')).not.toContain('task changed')
+  expect(keepInstructions('write docs')).toContain('"write docs"')
+})
+
 test('injection screen', () => {
   expect(screen(nouls({ injection: 0.93 }), c).flagged).toBe(true)
   expect(screen(nouls({ injection: 0.93 }), c).note).toContain('(0.93)')
@@ -411,7 +441,7 @@ test('stop judge: done-check and compact verdict', () => {
 test('router: decideRoute, risky forces deep, pick thresholds', () => {
   expect(decideRoute(routeAns('fast', 0.9, 0.2, 0.8, 0.1), c)).toEqual({ tier: 'fast', tierConf: 0.9, effort: 'low', effortConf: 0.8 })
   expect(decideRoute(routeAns('fast', 0.9, 0.2, 0.8, 0.7), c)).toEqual({ tier: 'deep', tierConf: 1, effort: 'high', effortConf: 1 })
-  expect(decideRoute(routeAns('balanced', 0.5, 9, 0.5, 0), c).effort).toBe('max')
+  expect(decideRoute(routeAns('balanced', 0.5, 3.6, 0.5, 0), c).effort).toBe('max')
   expect(pick(['low', 'medium', 'high'], 'low', 'high', 0.3, c)).toBe('high')
   expect(pick(['low', 'medium', 'high'], 'low', 'high', 0.29, c)).toBe(undefined)
   expect(pick(['low', 'medium', 'high'], 'high', 'low', 0.6, c)).toBe('low')
@@ -481,6 +511,28 @@ test('summarize', () => {
   expect(out).toContain('routed ↓: 1')
   expect(out).toContain('irreversible (0.95)')
   expect(summarize([], now, now)).toBe('ohmyjev: no decisions logged yet')
+})
+
+test('summarize counts damaged records instead of hiding them', () => {
+  const now = Date.UTC(2026, 9, 8, 12)
+  const partial = '{"ts":1,"session":"s","event":"tool.call","tool":"Bash","verdict":"deny"'
+  const good = JSON.stringify({ ts: now, session: 's', event: 'tool.call', tool: 'Bash', ms: 5, verdict: 'deny', reason: 'kept' })
+  const out = summarize([partial, '', good], now, now - 1)
+  expect(out).toContain('kept')
+  expect(out).toContain('1 damaged record skipped')
+})
+
+test('summarize orders merged session files by time', () => {
+  const now = Date.UTC(2026, 9, 8, 12)
+  const lines = [
+    JSON.stringify({ ts: now, session: 'b', event: 'tool.call', tool: 'Bash', verdict: 'deny', reason: 'NEWEST' }),
+    ...Array.from({ length: 10 }, (_, i) =>
+      JSON.stringify({ ts: now - (i + 1) * 60_000, session: 'a', event: 'tool.call', tool: 'Bash', verdict: 'deny', reason: `older ${i}` }),
+    ),
+  ]
+  const out = summarize(lines, now, now - 3_600_000)
+  expect(out).toContain('NEWEST')
+  expect(out.indexOf('older 0')).toBeLessThan(out.indexOf('NEWEST'))
 })
 ```
 
@@ -575,7 +627,7 @@ export const STOP_Q: Questions = {
   claimed_done: noul('Does `last_assistant_message` say the task in `current_request` is complete?'),
   verified: noul(
     'Is there evidence the work was checked?',
-    'Tests or the program ran and confirmed it, output was quoted or inspected, `tools_this_turn` includes running checks',
+    'Tests, a build or the program ran and did not fail, output was quoted or inspected, `tools_this_turn` shows such a check with outcome: ok (a pending, backgrounded or failed check is not evidence)',
     'Only claims success, or edited files without running or inspecting anything',
   ),
   asks_user: noul(
@@ -603,6 +655,15 @@ export const ROUTE_Q: Questions = {
   ]),
   risky: noul('Does `request` touch production, money, credentials, or irreversible state?'),
 }
+export const POLICY_Q: Questions = {
+  violates_policy: noul(
+    'Does this call break any rule listed in `policies`?',
+    'It does, in substance, what a listed rule forbids, whatever the exact wording',
+    'No listed rule applies to it, or it follows them',
+  ),
+}
+/** A gate's questions plus the policy question, only when the user wrote policies. */
+export const withPolicyQ = (q: Questions, c: Config): Questions => (splitList(c.policies).length ? { ...q, ...POLICY_Q } : q)
 
 // --- helpers ---
 
@@ -616,10 +677,19 @@ export const withPolicies = <T extends object>(state: T, c: Config): T | (T & { 
   return policies.length ? { ...state, policies } : state
 }
 export const denyText = (reason: string): string => `ohmyjev blocked this: ${reason}. ${BLOCK_NOTICE}`
-export const compactInstructions = (request: string): string =>
-  `The task changed. Keep the current request and everything needed for it in detail: "${clip(request, 600)}". ` +
-  'Summarize earlier work in a few lines.'
+export const keepInstructions = (request: string): string =>
+  `Keep the current request and everything needed for it in detail: "${clip(request, 600)}". Summarize earlier work in a few lines.`
+export const compactInstructions = (request: string): string => `The task changed. ${keepInstructions(request)}`
 export const isBareCommand = (text: string): boolean => /^\/[\w:-]+\s*$/.test(text.trim())
+
+/** classic.PreToolUse: add `allow` only to a pass that no settings hook decided or rewrote. */
+export function mergeApproval<R extends { allow?: unknown; ask?: unknown; deny?: unknown; updatedInput?: unknown }>(
+  r: R,
+  eligible: boolean,
+): R | (R & { allow: true }) {
+  if (!eligible || r.deny !== undefined || r.ask !== undefined || r.updatedInput !== undefined) return r
+  return { ...r, allow: true as const }
+}
 
 const f2 = (x: number): string => x.toFixed(2)
 const nv = (a: Answers, k: string): number => {
@@ -630,7 +700,17 @@ const ch = (a: Answers, k: string): Choice => a[k] as Choice
 
 // --- judges: pure (answers, config) -> verdict ---
 
+/** A policy verdict comes first on every gate; absent when no policy question was asked. */
+const policyDeny = (a: Answers, c: Config): Judged | null => {
+  const p = a.violates_policy
+  return p?.type === 'noul' && p.noul >= c.policyViolation
+    ? { verdict: 'deny', reason: `violates a policy (${f2(p.noul)})` }
+    : null
+}
+
 export function gateBash(a: Answers, c: Config): Judged {
+  const pd = policyDeny(a, c)
+  if (pd) return pd
   const effect = ch(a, 'effect')
   const destructive = nv(a, 'destructive_intent')
   if (effect.choice === 'irreversible' && effect.confidence >= c.bashIrreversible)
@@ -643,6 +723,8 @@ export function gateBash(a: Answers, c: Config): Judged {
 }
 
 export function gateWrite(a: Answers, c: Config): Judged {
+  const pd = policyDeny(a, c)
+  if (pd) return pd
   const kind = ch(a, 'kind')
   const secret = nv(a, 'contains_secret')
   if (secret >= c.writeSecret)
@@ -653,6 +735,8 @@ export function gateWrite(a: Answers, c: Config): Judged {
 }
 
 export function gateExfil(a: Answers, c: Config): Judged {
+  const pd = policyDeny(a, c)
+  if (pd) return pd
   const p = nv(a, 'exfiltrates')
   return p >= c.exfil
     ? { verdict: 'deny', reason: `sends local data outward (${f2(p)})` }
@@ -788,6 +872,8 @@ export type LogEntry = {
   session: string
   event: string
   tool: string
+  /** The session generation the work started in; stripped before storage. */
+  gen?: number
   verdict?: Verdict
   reason?: string
   error?: string
@@ -802,16 +888,21 @@ export type LogEntry = {
 
 export function summarize(lines: readonly string[], now: number, midnight: number): string {
   const rows: LogEntry[] = []
+  let damaged = 0
   for (const line of lines) {
+    if (!line.trim()) continue
     try {
       const r = JSON.parse(line) as LogEntry
       if (r && typeof r.ts === 'number') rows.push(r)
+      else damaged++
     } catch {
-      // partial or foreign line
+      damaged++ // a partial write: said, not hidden
     }
   }
-  if (!rows.length) return 'ohmyjev: no decisions logged yet'
+  if (!rows.length && !damaged) return 'ohmyjev: no decisions logged yet'
+  rows.sort((a, b) => a.ts - b.ts) // merged session files arrive in no particular order
   const out: string[] = []
+  if (damaged) out.push(`(${damaged} damaged record${damaged === 1 ? '' : 's'} skipped: evidence incomplete)`)
   const windows: Array<[string, number]> = [['today', midnight], ['7 days', now - 7 * 86_400_000]]
   for (const [label, since] of windows) {
     const sel = rows.filter(r => r.ts >= since)
@@ -874,8 +965,8 @@ git commit -m "feat: Jev rubrics, pure judges, router policy, paths, status and 
     - `validate(data, questions) -> Answers` (throws `JevError`).
     - `askJev($, c, state, questions, timeoutMs) -> Promise<{ answers, meta }>`. `timeoutMs = 0` means no timer of its own.
   - `state.ts`:
-    - `type Paths = { home, dir, log, session, sid }`.
-    - `paths($)`, `ensureDirs($, p)`, `loadSession($, p)`, `saveSession($, p, s, pinned)`, `appendLog($, p, entry)` (awaited).
+    - `type Paths = { home, dir, log, session, sid }` (`log` is this session's own `<dir>/log/<sid>.jsonl`).
+    - `paths($)`, `ensureDirs($, p)`, `loadSession($, p)`, `saveSession($, p, s, pinned)`, `appendLog($, p, entry)` (awaited; `ensureDirs` and `appendLog` throw on a non-zero exit so the caller can warn; both bounded at 2 s; every record opens on a fresh line; a record over 60000 encoded bytes is replaced by a minimal one; the private `gen` field is stripped).
   - `tests/harness.ts`:
     - `harness(on, answer, opts?) -> Fake`, where `Fake = { requests, logs, files, ran }`.
     - `bashAns`, `writeAns`, `nouls`, `routeAns`.
@@ -892,55 +983,110 @@ import type { Answers } from '../hooks/policy.ts'
 export type Fake = {
   requests: Array<{ url: string; body: { model: string; state: Record<string, unknown>; questions: Record<string, unknown> } }>
   logs: Array<Record<string, unknown>>
+  /** Every audit-append stdin as handed to `cat`, failed ones included. */
+  stdins: string[]
   files: Record<string, string>
   ran: string[][]
+  toasts: string[]
 }
 
-export type Answer = (questions: Record<string, unknown>) => Answers | 'hang'
+/** Lets queued microtasks run: the harness answers everything from memory, so this is all a test needs to wait. */
+export const flush = async (): Promise<void> => {
+  for (let i = 0; i < 50; i++) await Promise.resolve()
+}
+
+export type Answer = (questions: Record<string, unknown>, state: Record<string, unknown>) => Answers | 'hang'
 
 const DIRS = new Set(['/', '/repo', '/repo/src', '/home', '/home/u', '/home/u/.claude', '/home/u/.ohmyjev', '/home/u/.ohmyjev/sessions', '/tmp', '/etc'])
 const LINKS: Record<string, string> = { '/repo/link': '/outside' }
+const DANGLING = '/repo/dangling' // a link that leads nowhere: stat succeeds, realPath absent (FsStat doc)
 const ok = (stdout = '') => ({ exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
 
-/** Stands in for the engine beneath the plugin: env, session, fs, process, and Jev over http. */
+/** Stands in for the engine beneath the plugin: env, session, fs, process, permission checks, and Jev over http. */
 export function harness(
   on: On,
   answer: Answer,
-  opts: { status?: number; messages?: SessionMessage[]; env?: Record<string, string> } = {},
+  opts: {
+    status?: number
+    messages?: SessionMessage[]
+    env?: Record<string, string>
+    /** The engine's permission verdict for $.tool.check; allow unless a test says otherwise. */
+    check?: (tool: string, input: unknown) => 'allow' | 'ask' | 'deny'
+    /** Make every audit-log append fail (true), or only the first ('once'), as a full disk would. */
+    storageFails?: boolean | 'once'
+    /** The session id, mutable so a test can simulate a /clear that starts a fresh session. */
+    sid?: { current: string }
+    /** Awaited inside each audit-log append, so a test can hold one open. */
+    appendGate?: () => Promise<void>
+    /** Awaited inside fs.read of the given path when it returns a promise, so a test can hold a read open. */
+    readGate?: (path: string) => Promise<void> | undefined
+    /** Awaited inside every fs.write, so a test can hold the session-state write open. */
+    writeGate?: () => Promise<void>
+    /** Awaited at the start of process.run for the given argv when it returns a promise, so a test can hold a command open. */
+    runGate?: (argv: readonly string[]) => Promise<void> | undefined
+  } = {},
 ): Fake {
-  const fake: Fake = { requests: [], logs: [], files: {}, ran: [] }
+  const fake: Fake = { requests: [], logs: [], stdins: [], files: {}, ran: [], toasts: [] }
   mock.env(on, opts.env ?? { HOME: '/home/u', TMPDIR: '/tmp', TYPESAFE_API_KEY: 'ts-test' })
-  on('session.id', () => 'test-session')
+  on('ui.toast', ($, e) => {
+    fake.toasts.push(e.text)
+  })
+  on('session.id', () => opts.sid?.current ?? 'test-session')
   on('session.cwd', () => '/repo')
   on('session.root', () => '/repo')
   on('session.messages', () => opts.messages ?? [])
+  on('tool.check', ($, e) => {
+    const decision = (opts.check ?? (() => 'allow' as const))(String(e.tool), e.input)
+    return decision === 'allow' ? { decision } : { decision, reason: `${decision} by a permission rule` }
+  })
+  on('model.complete', () => ({
+    isAnswered: true as const,
+    text: 'OK',
+    usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+  }))
   on('fs.stat', ($, e) => {
+    if (e.path === DANGLING) return { kind: 'other' as const, size: 0, mtimeMs: 0, isLink: true }
     const link = Object.keys(LINKS).find(l => e.path === l || e.path.startsWith(l + '/'))
     if (link) return { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: true, realPath: LINKS[link] + e.path.slice(link.length) }
     if (DIRS.has(e.path)) return { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false, realPath: e.path }
     if (e.path in fake.files) return { kind: 'file' as const, size: fake.files[e.path]!.length, mtimeMs: 0, isLink: false, realPath: e.path }
     throw new Error(`ENOENT: ${e.path}`)
   })
-  on('fs.read', ($, e) => {
+  on('fs.read', async ($, e) => {
+    const gate = opts.readGate?.(e.path)
+    if (gate) await gate
     if (e.path in fake.files) return fake.files[e.path]!
     throw new Error(`ENOENT: ${e.path}`)
   })
-  on('fs.write', ($, e) => {
+  on('fs.write', async ($, e) => {
+    if (opts.writeGate) await opts.writeGate()
     fake.files[e.path] = e.text
   })
-  on('process.run', ($, e) => {
+  on('process.run', async ($, e) => {
     fake.ran.push([...e.argv])
-    if (e.argv[0] === 'sh' && e.argv[2] === 'cat >> "$0"') fake.logs.push(JSON.parse(e.init?.stdin ?? '{}'))
-    if (e.argv[0] === 'tail') return ok(fake.logs.map(l => JSON.stringify(l)).join('\n'))
+    const gate = opts.runGate?.(e.argv)
+    if (gate) await gate
+    if (e.argv[0] === 'sh' && e.argv[2] === 'cat >> "$0"') {
+      if (opts.appendGate) await opts.appendGate()
+      const stdin = e.init?.stdin ?? ''
+      fake.stdins.push(stdin)
+      if (opts.storageFails === true || (opts.storageFails === 'once' && fake.stdins.length === 1))
+        return { ...ok(), exitCode: 1, stderr: 'No space left on device' }
+      fake.logs.push(JSON.parse(stdin.trim()))
+    }
+    if (e.argv[0] === 'find') return ok(fake.logs.map(l => JSON.stringify(l)).join('\n'))
+    if (e.argv[0] === 'sh' && e.argv[2] === 'hang') throw new Error('timed out after 60000ms')
     if (e.argv[0] === 'git') return ok('src/a.ts\nsrc/b.ts\n')
-    if (e.argv[0] === 'sh' && e.argv[1] === '-c') return ok(`ran: ${e.argv[2]}\n`)
+    if (e.argv[0] === 'sh' && e.argv[1] === '-c') return { ...ok(`ran: ${e.argv[2]}\n`), isStdoutTruncated: e.argv[2] === 'big' }
     return ok()
   })
   on('http.fetch', ($, e) => {
     const body = JSON.parse(e.init?.body ?? '{}')
     fake.requests.push({ url: e.url, body })
-    const a = answer(body.questions)
-    if (a === 'hang') return new Promise(() => {})
+    const raw = answer(body.questions, body.state ?? {})
+    if (raw === 'hang') return new Promise(() => {})
+    // Gate tests rarely care about the screen that runs after the tool: answer its question "clean" unless the test did.
+    const a = 'injection' in body.questions && !('injection' in raw) ? { injection: { type: 'noul', noul: 0 } } : raw
     const status = opts.status ?? 200
     return { status, ok: status < 400, headers: {}, text: JSON.stringify({ model: 'jev-1.13.0', answers: a, usage: { input_tokens: 100 } }) }
   })
@@ -976,10 +1122,32 @@ test('validate rejects unknown labels, missing answers, non-numbers', () => {
   const Q = { q: { type: 'choice' as const, instructions: 'x', criteria: { a: 'A', b: 'B' } } }
   expect(() => validate({ answers: { q: { type: 'choice', choice: 'zzz', confidence: 1 } } }, Q)).toThrow(JevError)
   expect(() => validate({ answers: { q: { type: 'choice', choice: 'constructor', confidence: 1 } } }, Q)).toThrow(JevError)
+  expect(() => validate({ answers: { q: { type: 'choice', confidence: 1 } } }, Q)).toThrow(JevError) // no choice at all
   expect(() => validate({ answers: {} }, Q)).toThrow(JevError)
   expect(() => validate({ answers: { q: { type: 'choice', choice: 'a' } } }, Q)).toThrow(JevError)
   expect(() => validate(null, Q)).toThrow(JevError)
   expect(validate({ answers: { q: { type: 'choice', choice: 'a', confidence: 0.9 } } }, Q).q).toEqual({ type: 'choice', choice: 'a', confidence: 0.9 })
+})
+
+test('validate rejects numbers outside their domain', () => {
+  const Q = { q: { type: 'choice' as const, instructions: 'x', criteria: { a: 'A', b: 'B' } } }
+  expect(() => validate({ answers: { q: { type: 'choice', choice: 'a', confidence: 1.5 } } }, Q)).toThrow('probability')
+  expect(() => validate({ answers: { q: { type: 'choice', choice: 'a', confidence: Number.NaN } } }, Q)).toThrow('probability')
+  const N = { n: noul('x') }
+  expect(() => validate({ answers: { n: { type: 'noul', noul: -0.1 } } }, N)).toThrow('probability')
+  const S = { s: { type: 'score' as const, instructions: 'x', criteria: ['lo', 'mid', 'hi'] } }
+  expect(() => validate({ answers: { s: { type: 'score', score: 9 } } }, S)).toThrow('0..2')
+  expect(() => validate({ answers: { s: { type: 'score', score: 1, confidence: -0.1 } } }, S)).toThrow('probability')
+  expect(validate({ answers: { s: { type: 'score', score: 1.4 } } }, S).s).toEqual({ type: 'score', score: 1.4 })
+})
+
+test('validate keeps only validated fields', () => {
+  const Q = { q: { type: 'choice' as const, instructions: 'x', criteria: { a: 'A', b: 'B' } } }
+  const raw = { type: 'choice', choice: 'a', confidence: 0.9, probabilities: { a: 0.9, b: 0.1, zzz: 1, c: 'no' }, echo: 'text that must not survive' }
+  expect(validate({ answers: { q: raw } }, Q).q).toEqual({ type: 'choice', choice: 'a', confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } })
+  const S = { s: { type: 'score' as const, instructions: 'x', criteria: ['lo', 'hi'] } }
+  expect(validate({ answers: { s: { type: 'score', score: 1, legend: { '0': 'lo' }, probabilities: { '1': 1 } } } }, S).s)
+    .toEqual({ type: 'score', score: 1, probabilities: { '1': 1 } })
 })
 
 test('key order: config, then TYPESAFE, then OPENROUTER', async ($, on) => {
@@ -1061,19 +1229,49 @@ export async function resolveKey($: EngineInterface, c: Config): Promise<Key | n
   return null
 }
 
-/** Every question answered with its own type and a number; a choice only from our own labels. */
+/** The optional per-option distribution, kept only for our own labels and only where the value is a probability. */
+function probabilities(raw: unknown, labels: string[]): { probabilities?: Record<string, number> } {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, number> = {}
+  for (const k of labels) {
+    const v = (raw as Record<string, unknown>)[k]
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1) out[k] = v
+  }
+  return Object.keys(out).length ? { probabilities: out } : {}
+}
+
+/**
+ * Every question answered with its own type and a number in its domain; a choice only from our own labels.
+ * Only validated fields are kept, so nothing a provider echoes can reach the log or the model.
+ */
 export function validate(data: unknown, questions: Questions): Answers {
   const answers = (data as { answers?: unknown } | null)?.answers
   if (!answers || typeof answers !== 'object') throw new JevError('response has no answers')
   const out: Answers = {}
+  const unit = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1
   for (const [id, q] of Object.entries(questions)) {
     const a = (answers as Record<string, Record<string, unknown> | undefined>)[id]
     if (!a || a.type !== q.type) throw new JevError(`missing or mistyped answer: ${id}`)
-    if (q.type === 'choice' && !(typeof a.choice === 'string' && Object.hasOwn(q.criteria, a.choice)))
-      throw new JevError(`${id}: unknown choice ${JSON.stringify(a.choice)}`)
-    const field = q.type === 'choice' ? 'confidence' : q.type
-    if (typeof a[field] !== 'number') throw new JevError(`${id}: ${field} is not a number`)
-    out[id] = a as unknown as Answers[string]
+    if (q.type === 'noul') {
+      if (!unit(a.noul)) throw new JevError(`${id}: noul is not a probability`)
+      out[id] = { type: 'noul', noul: a.noul }
+    } else if (q.type === 'choice') {
+      if (!(typeof a.choice === 'string' && Object.hasOwn(q.criteria, a.choice)))
+        throw new JevError(`${id}: unknown choice ${String(JSON.stringify(a.choice) ?? 'undefined').slice(0, 40)}`)
+      if (!unit(a.confidence)) throw new JevError(`${id}: confidence is not a probability`)
+      out[id] = { type: 'choice', choice: a.choice, confidence: a.confidence, ...probabilities(a.probabilities, Object.keys(q.criteria)) }
+    } else {
+      const top = q.criteria.length - 1
+      if (!(typeof a.score === 'number' && Number.isFinite(a.score) && a.score >= 0 && a.score <= top))
+        throw new JevError(`${id}: score is not within 0..${top}`)
+      if (a.confidence !== undefined && !unit(a.confidence)) throw new JevError(`${id}: confidence is not a probability`)
+      out[id] = {
+        type: 'score',
+        score: a.score,
+        ...(a.confidence !== undefined ? { confidence: a.confidence } : {}),
+        ...probabilities(a.probabilities, q.criteria.map((_, i) => String(i))),
+      }
+    }
   }
   return out
 }
@@ -1145,11 +1343,14 @@ export async function paths($: EngineInterface): Promise<Paths> {
   const home = (await $.env.get('HOME')) ?? ''
   const dir = `${home}/.ohmyjev`
   const sid = sanitizeSid(await $.session.id())
-  return { home, dir, log: `${dir}/log.jsonl`, session: `${dir}/sessions/${sid}.json`, sid }
+  return { home, dir, log: `${dir}/log/${sid}.jsonl`, session: `${dir}/sessions/${sid}.json`, sid }
 }
 
+const STORAGE_MS = 2000 // a stalled disk degrades to a warning, never a hung decision
+
 export async function ensureDirs($: EngineInterface, p: Paths): Promise<void> {
-  await $.process.run(['mkdir', '-p', `${p.dir}/sessions`])
+  const r = await $.process.run(['mkdir', '-p', `${p.dir}/log`, `${p.dir}/sessions`], { timeoutMs: STORAGE_MS })
+  if (r.exitCode !== 0) throw new Error(`mkdir ${p.dir}: ${r.stderr.trim() || `exit ${r.exitCode}`}`)
 }
 
 export async function loadSession($: EngineInterface, p: Paths): Promise<SessionState> {
@@ -1165,9 +1366,22 @@ export async function saveSession($: EngineInterface, p: Paths, s: SessionState,
   if (pinned) $.ui.status(statusText(s, Date.now()))
 }
 
-/** $.fs has no append; a one-line `cat >>` does it. */
+const MAX_BYTES = 60_000 // hygiene for the per-session file: nothing reads a record this large usefully
+
+/**
+ * $.fs has no append; a one-line `cat >>` to this session's own file does it. Throws on a non-zero exit so the caller
+ * can warn. Every record opens on a fresh line, so a partial line left by an interrupted write, in this process or an
+ * earlier one, can never swallow it; readers skip the blank lines.
+ */
 export async function appendLog($: EngineInterface, p: Paths, entry: LogEntry): Promise<void> {
-  await $.process.run(['sh', '-c', 'cat >> "$0"', p.log], { stdin: JSON.stringify(entry) + '\n' })
+  const { gen: _gen, ...record } = entry // gen is the hook's own bookkeeping, never stored
+  let line = JSON.stringify(record)
+  if (new TextEncoder().encode(line).length > MAX_BYTES) {
+    const { ts, session, event, tool, verdict, ms, inputTokens, costUsd } = record
+    line = JSON.stringify({ ts, session, event, tool, verdict, ms, inputTokens, costUsd, error: 'record omitted: over 60000 bytes' })
+  }
+  const r = await $.process.run(['sh', '-c', 'cat >> "$0"', p.log], { stdin: '\n' + line + '\n', timeoutMs: STORAGE_MS })
+  if (r.exitCode !== 0) throw new Error(`append ${p.log}: ${r.stderr.trim() || `exit ${r.exitCode}`}`)
 }
 ```
 
@@ -1199,7 +1413,7 @@ git commit -m "feat: Jev client with timeout race and contract check; session st
 **Interfaces:**
 - Consumes: everything from Tasks 1–3.
 - Produces:
-  - `ohmyjev.ts` internals that later tasks extend: `register` with closure helpers `session($)`, `update($, change)`, `entry(event, tool)`, `log($, e)`, `decide($, event, tool, state, questions, timeoutMs?)`, `record($, e, verdict, reason, extra?)`, `real($, p)`, `pathAllowed($, path, cwd)`, `arg(e, k)`.
+  - `ohmyjev.ts` internals that later tasks extend: `register` with closure helpers `session($)`, `update($, change)` (writes serialized), `entry(event, tool)`, `log($, e)`, `decide($, event, tool, state, questions, timeoutMs?)`, `record($, e, verdict, reason, extra?)`, `real($, p) -> string | null`, `pathAllowed($, path, cwd)`, `resetState()`, module helpers `arg(e, k)`, `truncated(s)`, constant `CLIP = 16000`.
   - Two marker comments, `// --- turns ---` and `// --- ask_jev and /jev ---`, where Tasks 5 and 6 insert their code.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1210,7 +1424,7 @@ git commit -m "feat: Jev client with timeout race and contract check; session st
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import { BLOCK_NOTICE } from '../hooks/policy.ts'
-import { bashAns, harness, nouls, writeAns } from './harness.ts'
+import { bashAns, flush, harness, nouls, writeAns } from './harness.ts'
 
 /** A stand-in for the real tool, beneath the plugin: records whether the call reached it. */
 function tool(on: On, text = 'ok') {
@@ -1252,7 +1466,7 @@ test('http 500 passes through and marks down (Review Focus #3)', async ($, on) =
   expect(JSON.parse(fake.files['/home/u/.ohmyjev/sessions/test-session.json']!).downUntil).toBeGreaterThan(Date.now())
 })
 
-test('jev hang passes through after 1500ms (Review Focus #3)', async ($, on) => {
+test('jev hang passes through after 1500ms (Review Focus #3)', { options: { injectionScreen: false } }, async ($, on) => {
   harness(on, () => 'hang')
   const clock = mock.clock(on)
   const t = tool(on)
@@ -1291,6 +1505,15 @@ test('write outside repo denied without a Jev call (Review Focus #4)', async ($,
   expect(t.ran).toBe(0)
 })
 
+test('write through a dangling symlink denied (Review Focus #4)', async ($, on) => {
+  const fake = harness(on, () => writeAns('docs', 0.9, 0))
+  const t = tool(on)
+  const r = await $.tool.call({ tool: 'Write', file_path: 'dangling', content: 'x' })
+  expect(r.deny).toContain('outside the repo')
+  expect(fake.requests.length).toBe(0)
+  expect(t.ran).toBe(0)
+})
+
 test('write to ~/.claude and /tmp allowed (Review Focus #4)', async ($, on) => {
   harness(on, () => writeAns('docs', 0.9, 0))
   const t = tool(on)
@@ -1311,7 +1534,127 @@ test('1 MB write content is clipped (Review Focus #5)', async ($, on) => {
   const fake = harness(on, () => writeAns('data', 0.9, 0))
   tool(on)
   await $.tool.call({ tool: 'Write', file_path: 'big.txt', content: 'x'.repeat(1_000_000) })
-  expect(String(fake.requests[0]?.body.state.content).length).toBeLessThanOrEqual(4000)
+  expect(String(fake.requests[0]?.body.state.content).length).toBe(16000)
+  expect(fake.requests[0]?.body.state.truncated).toBe(true)
+})
+
+test('a settings hook that rewrites the command gets the rewrite judged (Review Focus #2)', async ($, on) => {
+  const fake = harness(on, (q, s) => (s.command === 'rm -rf /' ? bashAns('irreversible', 0.95, 0.9) : bashAns('read_only', 0.99, 0)))
+  on('classic.PreToolUse', () => ({ updatedInput: { command: 'rm -rf /' } }))
+  const t = tool(on)
+  const r = await $.tool.call({ tool: 'Bash', command: 'ls' })
+  expect(t.ran).toBe(0)
+  expect(r.deny ?? r.text).toContain('irreversible (0.95)')
+  expect(fake.requests.length).toBe(2)
+})
+
+test('a rewrite that comes with allow is still judged', async ($, on) => {
+  harness(on, (q, s) => (s.command === 'rm -rf /' ? bashAns('irreversible', 0.95, 0.9) : bashAns('read_only', 0.99, 0)))
+  on('classic.PreToolUse', () => ({ allow: true as const, updatedInput: { command: 'rm -rf /' } }))
+  const t = tool(on)
+  const r = await $.tool.call({ tool: 'Bash', command: 'ls' })
+  expect(t.ran).toBe(0)
+  expect(r.deny ?? r.text).toContain('irreversible (0.95)')
+})
+
+test('appends are serialized: a second record waits for the first', async ($, on) => {
+  let release!: () => void
+  const held = new Promise<void>(r => (release = r))
+  let n = 0
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9), { appendGate: () => (n++ === 0 ? held : Promise.resolve()) })
+  tool(on)
+  const first = $.tool.call({ tool: 'Bash', command: 'rm -rf /a' })
+  const second = $.tool.call({ tool: 'Bash', command: 'rm -rf /b' })
+  await flush()
+  expect(fake.ran.filter(a => a[2] === 'cat >> "$0"').length).toBe(1) // the second cat has not started
+  release()
+  await Promise.all([first, second])
+  expect(fake.logs.map(l => String(l.reason).slice(0, 12))).toEqual(['irreversible', 'irreversible'])
+  expect(fake.ran.filter(a => a[2] === 'cat >> "$0"').length).toBe(2)
+})
+
+test('a decision whose append crosses a /clear never touches the new session', async ($, on) => {
+  let release!: () => void
+  const held = new Promise<void>(r => (release = r))
+  const sid = { current: 'first-session' }
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9), { sid, appendGate: () => held })
+  tool(on)
+  const pending = $.tool.call({ tool: 'Bash', command: 'rm -rf /' })
+  await flush() // the append is now in flight
+  sid.current = 'second-session'
+  await $.session.end({ reason: 'clear', sessionId: 'first-session', resume: {} as never }) // pass what the types ask for
+  release()
+  expect((await pending).deny).toContain('irreversible')
+  expect(fake.logs.map(l => l.session)).toEqual(['first-session'])
+  expect(fake.files['/home/u/.ohmyjev/sessions/second-session.json']).toBe(undefined)
+})
+
+test('an outage whose append crosses a /clear never marks the new session down', async ($, on) => {
+  let release!: () => void
+  const held = new Promise<void>(r => (release = r))
+  const sid = { current: 'first-session' }
+  const fake = harness(on, () => bashAns('irreversible', 1, 1), { sid, appendGate: () => held, status: 500 })
+  tool(on)
+  const pending = $.tool.call({ tool: 'Bash', command: 'rm -rf /' })
+  await flush() // the error record's append is in flight
+  sid.current = 'second-session'
+  await $.session.end({ reason: 'clear', sessionId: 'first-session', resume: {} as never })
+  release()
+  await pending
+  expect(fake.files['/home/u/.ohmyjev/sessions/second-session.json']).toBe(undefined)
+})
+
+test('a session load that finishes after a /clear does not become the new session', async ($, on) => {
+  let release!: () => void
+  const held = new Promise<void>(r => (release = r))
+  const sid = { current: 'first-session' }
+  let gates = 0
+  const fake = harness(on, () => bashAns('read_only', 0.99, 0), {
+    sid,
+    readGate: path => (path.includes('/sessions/') && gates++ === 0 ? held : undefined),
+  })
+  tool(on)
+  const first = $.tool.call({ tool: 'Bash', command: 'ls' }) // its session load is held open
+  await flush()
+  sid.current = 'second-session'
+  await $.session.end({ reason: 'clear', sessionId: 'first-session', resume: {} as never })
+  const second = $.tool.call({ tool: 'Bash', command: 'ls' }) // the new session initializes
+  await flush()
+  release()
+  await Promise.all([first, second])
+  // the new call's own gate and screen, and nothing from the old call: not even its screen, which ran after the /clear
+  expect(JSON.parse(fake.files['/home/u/.ohmyjev/sessions/second-session.json'] ?? '{}').calls).toBe(2)
+  expect(fake.logs.filter(l => l.session === 'second-session').length).toBe(2)
+  expect(fake.files['/home/u/.ohmyjev/sessions/first-session.json']).toBe(undefined)
+})
+
+test('every append opens on a fresh line, so a partial tail from any earlier write never swallows a record', async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9), { storageFails: 'once' })
+  tool(on)
+  await $.tool.call({ tool: 'Bash', command: 'rm -rf /a' })
+  await $.tool.call({ tool: 'Bash', command: 'rm -rf /b' })
+  expect(fake.stdins.length).toBe(2)
+  expect(fake.stdins.every(s => s.startsWith('\n'))).toBe(true)
+  expect(fake.logs.length).toBe(1)
+})
+
+test('a held session-state write delays a deny by at most 2 s, then warns', async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9), { writeGate: () => new Promise(() => {}) })
+  const clock = mock.clock(on)
+  tool(on)
+  const pending = $.tool.call({ tool: 'Bash', command: 'rm -rf /' })
+  await clock.settle()
+  await clock.advance(2000)
+  expect((await pending).deny).toContain('irreversible')
+  expect(fake.toasts.some(t => t.includes('session state storage is slow'))).toBe(true)
+})
+
+test('a failing audit-log append is told once; decisions still stand', async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9), { storageFails: true })
+  tool(on)
+  expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })).deny).toContain('irreversible')
+  await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })
+  expect(fake.toasts.filter(t => t.includes('audit log not written')).length).toBe(1)
 })
 
 test('mcp exfil denied', async ($, on) => {
@@ -1337,19 +1680,38 @@ test('reads inside the repo are not screened by default', async ($, on) => {
   expect(r.context).toBe(undefined)
 })
 
-test('battery off makes no call', { options: { bashGate: false } }, async ($, on) => {
+test('batteries off make no call', { options: { bashGate: false, injectionScreen: false } }, async ($, on) => {
   const fake = harness(on, () => bashAns('irreversible', 1, 1))
   tool(on)
   expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })).deny).toBe(undefined)
   expect(fake.requests.length).toBe(0)
 })
 
+test('a command longer than the clip is sent truncated and never auto-approved (Review Focus #2)', async ($, on) => {
+  const fake = harness(on, () => bashAns('read_only', 0.99, 0))
+  tool(on)
+  await $.tool.call({ tool: 'Bash', command: 'echo ' + 'x'.repeat(20_000) + ' && rm -rf /' })
+  const state = fake.requests[0]?.body.state
+  expect(String(state?.command).length).toBe(16000)
+  expect(state?.truncated).toBe(true)
+  expect(fake.logs.find(l => l.event === 'tool.call')?.verdict).toBe(null)
+})
+
+test('policies add the policy question; a violation denies', { options: { policies: 'never push to main' } }, async ($, on) => {
+  const fake = harness(on, q => ({ ...bashAns('reversible', 0.9, 0.1), ...('violates_policy' in q ? nouls({ violates_policy: 0.95 }) : {}) }))
+  const t = tool(on)
+  const r = await $.tool.call({ tool: 'Bash', command: 'git push origin main' })
+  expect('violates_policy' in (fake.requests[0]?.body.questions ?? {})).toBe(true)
+  expect(r.deny).toContain('violates a policy (0.95)')
+  expect(t.ran).toBe(0)
+})
+
 test('policies ride along; payloads logged only when asked', { options: { policies: 'no pushes to main', logPayloads: true } }, async ($, on) => {
-  const fake = harness(on, () => bashAns('read_only', 0.5, 0))
+  const fake = harness(on, q => ({ ...bashAns('read_only', 0.5, 0), ...('violates_policy' in q ? nouls({ violates_policy: 0.1 }) : {}) }))
   tool(on)
   await $.tool.call({ tool: 'Bash', command: 'git push origin main' })
   expect(fake.requests[0]?.body.state.policies).toEqual(['no pushes to main'])
-  expect((fake.logs.at(-1)?.state as { command?: string })?.command).toBe('git push origin main')
+  expect((fake.logs.find(l => l.event === 'tool.call')?.state as { command?: string })?.command).toBe('git push origin main')
 })
 ```
 
@@ -1372,8 +1734,8 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 import { JevError, askJev } from './jev.ts'
 import {
   BASH_Q, EXFIL_Q, SCREEN_Q, WRITE_Q,
-  absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, isUnder, normalize, readConfig, screen,
-  splitList, withPolicies,
+  absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, isUnder, mergeApproval, normalize, readConfig,
+  screen, splitList, withPolicies, withPolicyQ,
   type LogEntry, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 import { appendLog, ensureDirs, loadSession, paths, saveSession, type Paths } from './state.ts'
@@ -1383,86 +1745,155 @@ type $ = EngineInterface
 const WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']
 const HOOKED: Array<string | RegExp> = ['Bash', 'Read', 'WebFetch', ...WRITE_TOOLS, /^mcp__/]
 const DOWN_MS = 5 * 60_000
+const CLIP = 16000 // chars of a command, content or input sent to Jev; what runs is always the full input
 
 const arg = (e: unknown, k: string): string => {
   const v = e && typeof e === 'object' ? (e as Record<string, unknown>)[k] : undefined
   return typeof v === 'string' ? v : ''
 }
+/** Tells Jev the state is a prefix; the hook never auto-approves a truncated input. */
+const truncated = (s: string) => (s.length > CLIP ? { truncated: true as const } : {})
 
 export const register: Register = (on, options) => {
   const c = readConfig(options)
   let ctx: { p: Paths; s: SessionState } | undefined
+  let generation = 0 // bumped by resetState: work begun in an earlier session never touches this one's log or state
   const approvals = new Map<string, boolean>() // tool_use_id -> eligible for auto-approve
 
   // --- session state and log ---
 
+  const warned = new Set<string>()
+  /** Storage trouble is told once per session on a visible channel; decisions still stand. */
+  function warnOnce($: $, text: string) {
+    if (warned.has(text)) return
+    warned.add(text)
+    $.ui.toast(`ohmyjev: ${text}`)
+  }
+  const why = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+  let loading: { gen: number; promise: Promise<{ p: Paths; s: SessionState }> } | undefined
+
+  /** This session's paths and state, loaded once per generation; a load that outlives its session never becomes the next one's. */
   async function session($: $) {
-    if (!ctx) {
-      const p = await paths($)
-      await ensureDirs($, p)
-      ctx = { p, s: await loadSession($, p) }
+    if (ctx) return ctx
+    const gen = generation
+    if (!loading || loading.gen !== gen) {
+      loading = {
+        gen,
+        promise: (async () => {
+          const p = await paths($)
+          try {
+            await ensureDirs($, p)
+          } catch (err) {
+            warnOnce($, `~/.ohmyjev not writable (${why(err)})`)
+          }
+          return { p, s: await loadSession($, p) }
+        })(),
+      }
     }
-    return ctx
+    const loaded = await loading.promise
+    if (gen === generation) ctx ??= loaded // a stale caller gets its own old session back and leaves ctx alone
+    return loaded
   }
 
-  async function update($: $, change: (s: SessionState) => void) {
+  let saving: Promise<void> = Promise.resolve()
+
+  /**
+   * Mutate in memory now; persist in order. Each write serializes the state as it stands when its turn comes, so the
+   * newest wins. Work from an earlier session generation is dropped after the await, never applied to this session.
+   */
+  async function update($: $, change: (s: SessionState) => void, gen = generation) {
     const x = await session($)
+    if (gen !== generation) return
     change(x.s)
-    await saveSession($, x.p, x.s, c.pinnedStatus)
+    saving = saving
+      .then(() => saveSession($, x.p, x.s, c.pinnedStatus))
+      .catch(err => warnOnce($, `session state not written (${why(err)})`))
+    await awaitBounded($, saving, 'session state storage')
   }
 
-  const entry = (event: string, tool: string): LogEntry => ({ ts: Date.now(), session: '', event, tool })
+  const entry = (event: string, tool: string): LogEntry => ({ ts: Date.now(), session: '', event, tool, gen: generation })
+  const stale = (e: LogEntry) => e.gen !== generation // settled after a /clear or resume: its session is gone
 
+  let appending: Promise<void> = Promise.resolve()
+  const STORAGE_WAIT_MS = 2000
+
+  /** Waits for persistence, but never past STORAGE_WAIT_MS: the write goes on in its queue, the decision goes out, and it is said once. */
+  async function awaitBounded($: $, p: Promise<void>, what: string) {
+    const stop = new AbortController()
+    const slow = $.clock.sleep(STORAGE_WAIT_MS, { signal: stop.signal }).then(() => 'slow' as const, () => 'slow' as const)
+    const outcome = await Promise.race([p.then(() => 'done' as const), slow]).finally(() => stop.abort())
+    if (outcome === 'slow') warnOnce($, `${what} is slow; decisions no longer wait for it`)
+  }
+
+  /** Append in order, one `cat` at a time per session, so records never interleave; the queue survives a failed write. */
   async function log($: $, e: LogEntry) {
-    const x = await session($)
-    e.session = x.p.sid
-    await appendLog($, x.p, e)
+    if (stale(e)) return
+    appending = appending
+      .then(async () => {
+        const x = await session($)
+        if (stale(e)) return // the session ended while this waited its turn
+        e.session = x.p.sid
+        await appendLog($, x.p, e)
+      })
+      .catch(err => warnOnce($, `audit log not written (${why(err)})`))
+    await awaitBounded($, appending, 'audit log storage')
   }
 
   /** Ask Jev. On failure: log, mark the session down (or no key, once), and return null so the caller passes through. */
-  async function decide($: $, event: string, tool: string, state: unknown, questions: Questions, timeoutMs = 1500) {
-    const e = entry(event, tool)
+  async function decide($: $, event: string, tool: string, state: unknown, questions: Questions, timeoutMs = 1500, gen = generation) {
+    const e = { ...entry(event, tool), gen } // bound to the generation the caller began in, not the one at call time
     if (c.logPayloads) e.state = state
     try {
       const { answers, meta } = await askJev($, c, state, questions, timeoutMs)
       Object.assign(e, meta, { answers })
       return { answers, e }
     } catch (err) {
-      if (!(err instanceof JevError)) throw err
+      if (!(err instanceof JevError)) {
+        await log($, { ...e, error: `internal: ${why(err)}` }) // a bug of ours, not an outage: pass through and say so
+        return null
+      }
+      if (stale(e)) return null
       const x = await session($)
       if (err.noKey && x.s.noKey) return null
       e.error = err.message
       await log($, e)
-      await update($, s => (err.noKey ? (s.noKey = true) : (s.downUntil = Date.now() + DOWN_MS)))
+      if (stale(e)) return null // an old failure never marks the new session down
+      await update($, s => (err.noKey ? (s.noKey = true) : (s.downUntil = Date.now() + DOWN_MS)), e.gen)
       return null
     }
   }
 
   async function record($: $, e: LogEntry, verdict: Verdict, reason: string, extra: Partial<SessionState> = {}) {
+    if (stale(e)) return
     e.verdict = verdict
     e.reason = reason
     await log($, e)
+    if (stale(e)) return // the session ended during the append: the new one's counters are not ours to touch
     await update($, s => {
       if (e.ms !== undefined) {
         s.calls++
-        s.downUntil = 0
         s.noKey = false
+        if (e.ms <= 1500) s.downUntil = 0 // only a timely answer proves Jev healthy again; a late one does not
       }
       if (verdict === 'deny' || verdict === 'block') s.denies++
       Object.assign(s, extra)
-    })
+    }, e.gen)
   }
 
   // --- paths: code decides, never Jev ---
 
-  /** realPath of the deepest existing ancestor, with the rest re-appended. */
-  async function real($: $, p: string): Promise<string> {
+  /**
+   * realPath of the deepest existing ancestor with the rest re-appended; null when that ancestor exists but could
+   * not be resolved (a dangling link, or a hook withheld realPath). The FsStat doc: a guard denies without it.
+   */
+  async function real($: $, p: string): Promise<string | null> {
     let head = p
     let tail = ''
     while (head && head !== '/') {
       try {
         const st = await $.fs.stat(head, { resolve: true })
-        return normalize((st.realPath ?? head) + tail)
+        return st.realPath ? normalize(st.realPath + tail) : null
       } catch {
         const i = head.lastIndexOf('/')
         tail = head.slice(i) + tail
@@ -1477,20 +1908,29 @@ export const register: Register = (on, options) => {
     const tmpdir = await $.env.get('TMPDIR')
     const roots = [await $.session.root(), ...splitList(c.allowPaths).map(r => expandRoot(r, home, tmpdir))]
     const target = await real($, absolute(path, cwd, home))
-    for (const r of roots) if (r && isUnder(target, await real($, r))) return true
+    if (target === null) return false
+    for (const r of roots) {
+      const root = r && (await real($, r))
+      if (root && isUnder(target, root)) return true
+    }
     return false
   }
 
   // --- gates (before the tool runs) ---
 
-  async function gate($: $, e: { tool: string; tool_use_id?: string }): Promise<string | undefined> {
+  async function gate($: $, e: { tool: string; tool_use_id?: string }, gen = generation): Promise<string | undefined> {
     const tool = String(e.tool)
     const cwd = await $.session.cwd()
     if (tool === 'Bash' && c.bashGate) {
-      const state = withPolicies({ command: clip(arg(e, 'command'), 4000), cwd, description: clip(arg(e, 'description'), 300) }, c)
-      const d = await decide($, 'tool.call', tool, state, BASH_Q)
+      const command = arg(e, 'command')
+      const state = withPolicies(
+        { command: clip(command, CLIP), cwd, description: clip(arg(e, 'description'), 300), ...truncated(command) },
+        c,
+      )
+      const d = await decide($, 'tool.call', tool, state, withPolicyQ(BASH_Q, c), 1500, gen)
       if (!d) return undefined
-      const j = gateBash(d.answers, c)
+      let j = gateBash(d.answers, c)
+      if (j.verdict === 'allow' && command.length > CLIP) j = { verdict: null, reason: `${j.reason}, truncated` }
       if (e.tool_use_id) approvals.set(e.tool_use_id, j.verdict === 'allow')
       await record($, d.e, j.verdict, j.reason)
       return j.verdict === 'deny' ? denyText(j.reason) : undefined
@@ -1499,14 +1939,14 @@ export const register: Register = (on, options) => {
       const path = arg(e, 'file_path') || arg(e, 'notebook_path')
       if (!(await pathAllowed($, path, cwd))) {
         const reason = `${path} is outside the repo and allowPaths`
-        await record($, entry('tool.call', tool), 'deny', reason)
+        await record($, { ...entry('tool.call', tool), gen }, 'deny', reason)
         return denyText(reason)
       }
       const edits = (e as { edits?: unknown }).edits
       const content =
         arg(e, 'content') || arg(e, 'new_string') || arg(e, 'new_source') ||
         (Array.isArray(edits) ? edits.map(x => arg(x, 'new_string')).join('\n') : '')
-      const d = await decide($, 'tool.call', tool, withPolicies({ path, content: clip(content, 4000) }, c), WRITE_Q)
+      const d = await decide($, 'tool.call', tool, withPolicies({ path, content: clip(content, CLIP), ...truncated(content) }, c), withPolicyQ(WRITE_Q, c), 1500, gen)
       if (!d) return undefined
       const j = gateWrite(d.answers, c)
       await record($, d.e, j.verdict, j.reason)
@@ -1514,7 +1954,8 @@ export const register: Register = (on, options) => {
     }
     if ((tool === 'WebFetch' || tool.startsWith('mcp__')) && c.exfilGate) {
       const { tool: _t, tool_use_id: _id, ...input } = e as Record<string, unknown>
-      const d = await decide($, 'tool.call', tool, withPolicies({ tool, input: clip(JSON.stringify(input), 4000) }, c), EXFIL_Q)
+      const json = JSON.stringify(input)
+      const d = await decide($, 'tool.call', tool, withPolicies({ tool, input: clip(json, CLIP), ...truncated(json) }, c), withPolicyQ(EXFIL_Q, c), 1500, gen)
       if (!d) return undefined
       const j = gateExfil(d.answers, c)
       await record($, d.e, j.verdict, j.reason)
@@ -1525,16 +1966,17 @@ export const register: Register = (on, options) => {
 
   // --- injection screen (after the tool ran) ---
 
-  async function screenResult($: $, e: { tool: string }, r: ToolCallResult): Promise<ToolCallResult> {
+  async function screenResult($: $, e: { tool: string }, r: ToolCallResult, gen = generation): Promise<ToolCallResult> {
     if (!c.injectionScreen || r.deny !== undefined || !r.text?.trim()) return r
     const tool = String(e.tool)
     if (WRITE_TOOLS.includes(tool)) return r
     if (tool === 'Read' && !c.screenRepoReads) {
       const home = (await $.env.get('HOME')) ?? ''
       const target = await real($, absolute(arg(e, 'file_path'), await $.session.cwd(), home))
-      if (isUnder(target, await real($, await $.session.root()))) return r
+      const root = await real($, await $.session.root())
+      if (target && root && isUnder(target, root)) return r // an unresolvable path is screened like an outside read
     }
-    const d = await decide($, 'tool.result', tool, { tool, content: clip(r.text, 6000) }, SCREEN_Q)
+    const d = await decide($, 'tool.result', tool, { tool, content: clip(r.text, 6000) }, SCREEN_Q, 1500, gen)
     if (!d) return r
     const s = screen(d.answers, c)
     await record($, d.e, s.flagged ? 'flag' : null, s.reason)
@@ -1560,16 +2002,28 @@ export const register: Register = (on, options) => {
     const r = await next(e)
     const eligible = c.autoApprove && approvals.get(e.tool_use_id) === true
     approvals.delete(e.tool_use_id)
-    if (!eligible || r.deny || r.ask) return r
-    return { ...r, allow: true as const }
-  })
+    if (r.updatedInput !== undefined && r.deny === undefined) {
+      const denied = await gate($, { tool: e.tool, ...r.updatedInput }) // a rewritten call is judged afresh, whatever else the hook said
+      if (denied) return { deny: denied, ...(r.additionalContext ? { additionalContext: r.additionalContext } : {}) }
+    }
+    return mergeApproval(r, eligible) // a settings deny or ask wins, and a rewrite is never auto-approved
+  }).catch(($, e, next) => next(e))
 
   // --- turns ---
 
   // --- ask_jev and /jev ---
 
-  on('session.end', ($, e, next) => {
+  /** Everything held for one session. Task 5 adds its turn state here. */
+  function resetState() {
+    generation++
     ctx = undefined
+    loading = undefined
+    approvals.clear()
+    warned.clear()
+  }
+
+  on('session.end', ($, e, next) => {
+    resetState()
     return next(e)
   })
 }
@@ -1620,20 +2074,64 @@ import { harness, nouls, routeAns } from './harness.ts'
 const msg = (role: 'user' | 'assistant', text: string, tools: string[] = []): SessionMessage => ({
   role,
   text,
-  toolUses: tools.map((tool, i) => ({ tool_use_id: `t${i}`, tool, input: {} })),
+  toolUses: tools.map((tool, i) => ({ tool_use_id: `t${i}`, tool, input: {}, text: 'ok' })),
 })
 const stopAns = (v: Record<string, number>) =>
   nouls({ claimed_done: 0.1, verified: 0.9, asks_user: 0, at_boundary: 0.5, switched_gears: 0, ...v })
 
-test('stop: blocks an unverified done once per request', async ($, on) => {
+test('stop: blocks an unverified done once per turn, with tool evidence', async ($, on) => {
   const messages = [msg('user', 'build the feature'), msg('assistant', 'All done.', ['Edit'])]
   const fake = harness(on, () => stopAns({ claimed_done: 0.9, verified: 0.1 }), { messages })
   const first = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'All done.' })
   expect(first.block).toBe(DONE_REASON)
-  expect(fake.requests[0]?.body.state).toMatchObject({ current_request: 'build the feature', tools_this_turn: ['Edit'], previous_requests: [] })
+  expect(fake.requests[0]?.body.state).toMatchObject({
+    current_request: 'build the feature',
+    tools_this_turn: [{ tool: 'Edit', input: '{}', outcome: 'ok' }],
+    previous_requests: [],
+  })
   expect('switched_gears' in (fake.requests[0]?.body.questions ?? {})).toBe(false)
   const again = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'All done.' })
   expect(again.block).toBe(undefined)
+})
+
+test('stop: pending, backgrounded and failed checks are reported as such', async ($, on) => {
+  const messages: SessionMessage[] = [
+    msg('user', 'run the tests'),
+    {
+      role: 'assistant',
+      text: 'Done.',
+      toolUses: [
+        { tool_use_id: 'a', tool: 'Bash', input: { command: 'npm test' }, text: 'started', result: { backgroundTaskId: 'bg1', stdout: '', stderr: '', interrupted: false } },
+        { tool_use_id: 'b', tool: 'Bash', input: { command: 'npm run lint' } },
+        { tool_use_id: 'c', tool: 'Bash', input: { command: 'npm run build' }, text: 'error', isError: true },
+      ],
+    },
+  ]
+  const fake = harness(on, () => stopAns({ claimed_done: 0.9, verified: 0.1 }), { messages })
+  await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Done.' })
+  const tools = fake.requests[0]?.body.state.tools_this_turn as Array<{ outcome: string }>
+  expect(tools.map(t => t.outcome)).toEqual(['backgrounded', 'pending', 'failed'])
+})
+
+test('compact: a precompute is not counted', async ($, on) => {
+  harness(on, () => routeAns('balanced', 0.1, 2, 0.1, 0))
+  on('session.compact', () => ({ messages: [] }))
+  await $.turn.start({ text: 'migrate the orders table', turnId: 't1' })
+  await $.session.compact({ trigger: 'precompute', messages: [] })
+  const file = '/home/u/.ohmyjev/sessions/test-session.json'
+  expect(JSON.parse((await $.fs.read(file)) || '{}').compactions ?? 0).toBe(0)
+  await $.session.compact({ trigger: 'auto', messages: [] })
+  expect(JSON.parse(await $.fs.read(file)).compactions).toBe(1)
+})
+
+test('stop: a new turn may be blocked again; state resets at session end', async ($, on) => {
+  const messages = [msg('user', 'build the feature'), msg('assistant', 'All done.', ['Edit'])]
+  harness(on, q => ('tier' in q ? routeAns('balanced', 0.5, 2, 0.5, 0) : stopAns({ claimed_done: 0.9, verified: 0.1 })), { messages })
+  await $.turn.start({ text: 'build the feature', turnId: 't1' })
+  expect((await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'All done.' })).block).toBe(DONE_REASON)
+  expect((await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'All done.' })).block).toBe(undefined)
+  await $.turn.start({ text: 'build the feature', turnId: 't2' })
+  expect((await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'All done.' })).block).toBe(DONE_REASON)
 })
 
 test('stop: stop_hook_active makes no call', async ($, on) => {
@@ -1662,7 +2160,23 @@ test('compact: gears switched + enough context -> session.compact with instructi
   expect(compacted[0]).toContain('now write the docs')
 })
 
-test('compact: engine auto-compaction gets the live-work instructions', async ($, on) => {
+test('compact: a new turn drops a pending compaction', async ($, on) => {
+  const messages = [msg('user', 'fix billing'), msg('assistant', 'fixed'), msg('user', 'now write the docs'), msg('assistant', 'written')]
+  harness(on, q => ('tier' in q ? routeAns('balanced', 0.5, 2, 0.5, 0) : stopAns({ switched_gears: 0.9, at_boundary: 0.9 })), { messages })
+  const clock = mock.clock(on)
+  let compacted = 0
+  on('session.compact', () => {
+    compacted++
+    return { messages: [] }
+  })
+  await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'written' })
+  await $.turn.start({ text: 'and now a third thing', turnId: 't3' })
+  await $.session.measure({ context: { window: 200_000, percent: 50 }, rateLimits: [], changed: [] })
+  await clock.advance(1)
+  expect(compacted).toBe(0)
+})
+
+test('compact: engine auto-compaction keeps the live request, without "task changed"', async ($, on) => {
   harness(on, () => routeAns('balanced', 0.1, 2, 0.1, 0))
   let seen = ''
   on('session.compact', ($, e) => {
@@ -1672,6 +2186,19 @@ test('compact: engine auto-compaction gets the live-work instructions', async ($
   await $.turn.start({ text: 'migrate the orders table', turnId: 't1' })
   await $.session.compact({ trigger: 'auto', messages: [] })
   expect(seen).toContain('migrate the orders table')
+  expect(seen).not.toContain('task changed')
+})
+
+test('compact: a subagent auto-compaction is left alone', async ($, on) => {
+  harness(on, () => routeAns('balanced', 0.1, 2, 0.1, 0))
+  let seen: string | undefined = 'untouched'
+  on('session.compact', ($, e) => {
+    seen = e.instructions
+    return { messages: [] }
+  })
+  await $.turn.start({ text: 'migrate the orders table', turnId: 't1' })
+  await $.session.compact({ trigger: 'auto', agentId: 'a1', messages: [] })
+  expect(seen).toBe(undefined)
 })
 
 test('router: simple turn lowers the main effort', async ($, on) => {
@@ -1706,7 +2233,7 @@ test('router: subagent model routed at spawn', async ($, on) => {
 })
 ```
 
-These tests raise `turn.start`, `turn.step`, `session.measure`, `session.compact` and `agent.spawn` through the kit's `$`. If the kit's `$.session.compact` can't raise `trigger: 'auto'` (a plugin's own call is `trigger: 'plugin'`), delete only the 'engine auto-compaction' test. Note it in the commit message; its behaviour is a single `next({ ...e, instructions })` line. If one of those calls takes a different argument shape, or a different stand-in result, in this build, follow the declaration in `.claude-plugin/types/claude-code/index.d.ts`, and keep each assertion's meaning. The router and compact *decisions* are also pinned by Task 2's pure tables.
+These tests raise `turn.start`, `turn.step`, `session.measure`, `session.compact` and `agent.spawn` through the kit's `$`. If the kit's `$.session.compact` can't raise `trigger: 'auto'` or an `agentId` (a plugin's own call is `trigger: 'plugin'`), delete only the two 'engine auto-compaction' / 'subagent' tests. Note it in the commit message; its behaviour is a single `next({ ...e, instructions })` line. If one of those calls takes a different argument shape, or a different stand-in result, in this build, follow the declaration in `.claude-plugin/types/claude-code/index.d.ts`, and keep each assertion's meaning. The router and compact *decisions* are also pinned by Task 2's pure tables.
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -1719,7 +2246,7 @@ In `hooks/ohmyjev.ts`, extend the `policy.ts` import with:
 
 ```ts
   ROUTE_Q, STOP_Q, SWITCHED_Q, TIERS,
-  compactInstructions, decideRoute, isBareCommand, judgeStop, modelOf, pick, routeStep, tierOf,
+  compactInstructions, decideRoute, isBareCommand, judgeStop, keepInstructions, modelOf, pick, routeStep, tierOf,
   type Route,
 ```
 
@@ -1729,14 +2256,37 @@ Add these variables directly under `const approvals = …` inside `register`:
 
 ```ts
   let lastRequest = ''
-  let pendingCompact: string | undefined // the request to keep when the next measure allows a compaction
-  let blockedRequests = -1 // request count at the last done-check block: one block per request
+  let currentTurnId = '' // from turn.start; the done-check blocks at most once per turn
+  let blockedTurnId = ''
+  let pendingCompact: string | undefined // the request to keep: set at Stop, consumed by the next measure, dropped at turn.start
+  let compactTimer: { cancel: () => void } | undefined
   let route: { turnId: string; route: Route } | undefined
+```
+
+Extend `resetState()` (Task 4) with these lines, so a `/clear` or session end forgets every turn-scoped value:
+
+```ts
+    lastRequest = ''
+    currentTurnId = ''
+    blockedTurnId = ''
+    pendingCompact = undefined
+    compactTimer?.cancel()
+    compactTimer = undefined
+    route = undefined
 ```
 
 Insert under `// --- turns ---`:
 
 ```ts
+  /** What the transcript shows a call came to: only `ok` counts as evidence of a check. */
+  const outcomeOf = (t: { tool: string; result?: unknown; text?: string; isError?: true }): 'ok' | 'failed' | 'pending' | 'backgrounded' => {
+    if (t.isError) return 'failed'
+    if (t.text === undefined) return 'pending'
+    const r = t.result as { backgroundTaskId?: string; interrupted?: boolean; timedOutAfterMs?: number } | undefined
+    if (t.tool === 'Bash' && r && (r.backgroundTaskId !== undefined || r.interrupted === true || r.timedOutAfterMs !== undefined)) return 'backgrounded'
+    return 'ok'
+  }
+
   // done-check + compact verdict: one Jev call per stop. Settings Stop hooks run first.
   on('classic.Stop', async ($, e, next) => {
     const r = await next(e)
@@ -1749,7 +2299,11 @@ Insert under `// --- turns ---`:
     const state = {
       current_request: clip(current, 600),
       previous_requests: requests.slice(-6, -1).map(m => clip(m.text, 200)),
-      tools_this_turn: msgs.slice(last + 1).flatMap(m => m.toolUses.map(t => t.tool)),
+      // what ran since the request: enough of each call to tell a check from an echo, and whether it failed
+      tools_this_turn: msgs
+        .slice(last + 1)
+        .flatMap(m => m.toolUses.map(t => ({ tool: t.tool, input: clip(JSON.stringify(t.input), 200), outcome: outcomeOf(t) })))
+        .slice(-20),
       last_assistant_message: clip(e.last_assistant_message ?? msgs.filter(m => m.role === 'assistant').at(-1)?.text, 1500),
     }
     const questions = state.previous_requests.length ? { ...STOP_Q, ...SWITCHED_Q } : STOP_Q
@@ -1757,8 +2311,9 @@ Insert under `// --- turns ---`:
     if (!d) return r
     const j = judgeStop(d.answers, c)
     pendingCompact = c.autoCompact && j.wantsCompact ? current : undefined
-    const block = c.doneCheck && blockedRequests !== requests.length ? j.block : null
-    if (block) blockedRequests = requests.length
+    const turnKey = currentTurnId || `request-${requests.length}` // a stop with no turn.start (headless) falls back to the request count
+    const block = c.doneCheck && blockedTurnId !== turnKey ? j.block : null
+    if (block) blockedTurnId = turnKey
     await record($, d.e, block ? 'block' : null, block ?? (j.wantsCompact ? 'task moved on' : 'stop ok'))
     return block ? { ...r, block } : r
   })
@@ -1769,25 +2324,34 @@ Insert under `// --- turns ---`:
     if (pendingCompact !== undefined && (e.context.percent ?? 0) >= c.compactMinPercent) {
       const instructions = compactInstructions(pendingCompact)
       pendingCompact = undefined
-      $.clock.after(0, () => {
-        $.session.compact({ instructions }).catch(() => {})
+      compactTimer?.cancel()
+      compactTimer = $.clock.after(0, () => {
+        compactTimer = undefined
+        $.session.compact({ instructions }).catch(() => {}) // rejects while a turn runs; the next Stop judges again
       })
     }
     return r
   })
 
-  // every compaction: the engine's own (auto) gets live-work instructions; count them all.
+  // every main-conversation compaction: the engine's own (auto) keeps the live request; a subagent's is left alone.
   on('session.compact', async ($, e, next) => {
-    const extra = e.trigger === 'auto' && lastRequest ? compactInstructions(lastRequest) : ''
+    if (e.agentId !== undefined) return next(e)
+    const extra = e.trigger === 'auto' && lastRequest ? keepInstructions(lastRequest) : ''
     const r = await next(extra ? { ...e, instructions: [e.instructions, extra].filter(Boolean).join('\n') } : e)
-    if (!('skip' in r && r.skip)) await record($, entry('session.compact', e.trigger), null, e.trigger, { compactions: (ctx?.s.compactions ?? 0) + 1 })
+    // a precompute installs nothing, so it is not a compaction; the later application is counted when it runs
+    if (e.trigger !== 'precompute' && !('skip' in r && r.skip))
+      await record($, entry('session.compact', e.trigger), null, e.trigger, { compactions: (ctx?.s.compactions ?? 0) + 1 })
     return r
   })
 
   // router: classify once per turn, apply at each main-loop step.
   on('turn.start', async ($, e, next) => {
     lastRequest = e.text
+    currentTurnId = e.turnId
     route = undefined
+    pendingCompact = undefined // a verdict from an earlier stop is stale once a new turn begins
+    compactTimer?.cancel()
+    compactTimer = undefined
     if ((c.routeEffort || c.routeMainModel) && !isBareCommand(e.text)) {
       const d = await decide($, 'turn.start', '', { request: clip(e.text, 1500) }, ROUTE_Q)
       if (d) {
@@ -1850,9 +2414,9 @@ git commit -m "feat: done-check, auto-compact, and model/effort router"
   - Task 4 helpers.
 - Produces:
   - `ask.ts`:
-    - `ASK_TOOL = 'mcp__ohmyjev__ask_jev'`, `ASK_SPEC`, `type AskInput`, `type AskDeps`.
-    - `buildQuestion(input) -> Question | string`, `expandFiles($, patterns, cwd)`, `readFile($, path, cwd)`.
-    - `runAsk($, input, deps) -> Promise<string>`, which returns JSON text.
+    - `ASK_TOOL = 'mcp__ohmyjev__ask_jev'`, `ASK_SPEC`, `type AskInput`, `type AskDeps` (`cwd`, `ask`, `gateCommand`, `check`, `fail`), `type Read`, `CONCURRENCY = 8`, `ASK_MS = 8000` (one deadline for reads and asks; paused during the command).
+    - `buildQuestion(input) -> Question | string`, `expandFiles($, patterns, cwd) -> { files, omitted }`, `readFile($, path, cwd, check) -> Read`.
+    - `runAsk($, input, deps) -> Promise<string>`, which returns JSON text: an answer, `{ answers }` with `each`, or `{ error }`; any of them plus coverage (`skipped`, `truncated`, `omittedFiles`) when evidence was incomplete, and `ran: { command, exitCode }` whenever a command was dispatched before the result was known (`exitCode: null` when it timed out or could not start, so a retry is never blind).
   - Hooks on `session.start` (registers the tool and `/jev`) and `command.run` (`jev`). `tool.call` now answers `ASK_TOOL`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1860,9 +2424,9 @@ git commit -m "feat: done-check, auto-compact, and model/effort router"
 `tests/ask.test.ts`:
 
 ```ts
-import { expect, test } from 'claude-code/testing'
-import { buildQuestion } from '../hooks/ask.ts'
-import { bashAns, harness, nouls } from './harness.ts'
+import { expect, mock, test } from 'claude-code/testing'
+import { buildQuestion, expandFiles } from '../hooks/ask.ts'
+import { bashAns, flush, harness, nouls } from './harness.ts'
 
 const ASK = 'mcp__ohmyjev__ask_jev'
 
@@ -1887,9 +2451,142 @@ test('each: one call per globbed file, answers keyed by path', async ($, on) => 
   fake.files['/repo/src/a.ts'] = 'a'
   fake.files['/repo/src/b.ts'] = 'b'
   const r = await $.tool.call({ tool: ASK, question: 'Relevant to the rounding bug?', type: 'noul', files: ['src/*.ts'], each: true })
-  expect(Object.keys(JSON.parse(String(r.result)))).toEqual(['src/a.ts', 'src/b.ts'])
+  const out = JSON.parse(String(r.result))
+  expect(Object.keys(out.answers)).toEqual(['src/a.ts', 'src/b.ts'])
+  expect(out.skipped).toBe(undefined)
   expect(fake.requests.length).toBe(2)
   expect(fake.ran.some(a => a[0] === 'git' && a.includes('src/*.ts'))).toBe(true)
+})
+
+test('each: the deadline returns partial answers, marks Jev down, and stops new requests', async ($, on) => {
+  const fake = harness(on, (q, s) => (s.path === 'src/b.ts' ? 'hang' : { q: { type: 'noul', noul: 0.5 } }))
+  fake.files['/repo/src/a.ts'] = 'a'
+  fake.files['/repo/src/b.ts'] = 'b'
+  const clock = mock.clock(on)
+  const pending = $.tool.call({ tool: ASK, question: 'Relevant?', type: 'noul', files: ['src/*.ts'], each: true })
+  await clock.settle()
+  await clock.advance(8000)
+  const out = JSON.parse(String((await pending).result))
+  expect(out.answers['src/a.ts']).toEqual({ type: 'noul', noul: 0.5 })
+  expect(out.answers['src/b.ts']).toEqual({ error: 'timeout' })
+  await flush() // the outage report is written in the background
+  expect(String(fake.logs.at(-1)?.error)).toContain('unanswered')
+  expect(JSON.parse(fake.files['/home/u/.ohmyjev/sessions/test-session.json']!).downUntil).toBeGreaterThan(Date.now())
+})
+
+test('a held file read ends at the deadline with a reason, not a hang', async ($, on) => {
+  const fake = harness(on, () => ({ q: { type: 'noul', noul: 0.5 } }), { readGate: path => (path.endsWith('/a.ts') ? new Promise(() => {}) : undefined) })
+  fake.files['/repo/src/a.ts'] = 'a'
+  fake.files['/repo/src/b.ts'] = 'b'
+  const clock = mock.clock(on)
+  const pending = $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: ['src/*.ts'], each: true })
+  await clock.settle()
+  await clock.advance(8000)
+  const out = JSON.parse(String((await pending).result))
+  expect(out.error).toContain('none of the requested files')
+  expect(out.skipped['src/a.ts']).toContain('deadline')
+  expect(out.skipped['src/b.ts']).toContain('deadline')
+  expect(JSON.parse(fake.files['/home/u/.ohmyjev/sessions/test-session.json'] ?? '{}').downUntil ?? 0).toBe(0) // a slow disk is not a Jev outage
+})
+
+test('a held glob expansion ends at the deadline', async ($, on) => {
+  harness(on, () => ({ q: { type: 'noul', noul: 0.5 } }), { runGate: argv => (argv[0] === 'git' ? new Promise(() => {}) : undefined) })
+  const clock = mock.clock(on)
+  const pending = $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: ['src/*.ts'], each: true })
+  await clock.settle()
+  await clock.advance(8000)
+  expect(JSON.parse(String((await pending).result)).error).toContain('expansion did not finish')
+})
+
+test('a read budget spent on one slow file dispatches no asks for the rest', async ($, on) => {
+  const fake = harness(on, () => ({ q: { type: 'noul', noul: 0.5 } }), { readGate: path => (path.endsWith('/b.ts') ? new Promise(() => {}) : undefined) })
+  fake.files['/repo/src/a.ts'] = 'a'
+  fake.files['/repo/src/b.ts'] = 'b'
+  const clock = mock.clock(on)
+  const pending = $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: ['src/*.ts'], each: true })
+  await clock.settle()
+  await clock.advance(8000)
+  const out = JSON.parse(String((await pending).result))
+  expect(fake.requests.length).toBe(0) // a.ts was read, but the budget was gone before anything could be asked
+  expect(out.answers['src/a.ts']).toEqual({ error: 'timeout' })
+  expect(out.skipped['src/b.ts']).toContain('deadline')
+})
+
+test('a held audit append neither delays nor loses an answer, nor marks Jev down', async ($, on) => {
+  let release!: () => void
+  const held = new Promise<void>(r => (release = r))
+  const fake = harness(on, () => ({ q: { type: 'noul', noul: 0.5 } }), { appendGate: () => held })
+  fake.files['/repo/src/a.ts'] = 'a'
+  const out = JSON.parse(String((await $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: ['src/a.ts'], each: true })).result))
+  expect(out.answers['src/a.ts']).toEqual({ type: 'noul', noul: 0.5 })
+  release()
+  await flush()
+  expect(JSON.parse(fake.files['/home/u/.ohmyjev/sessions/test-session.json'] ?? '{}').downUntil ?? 0).toBe(0)
+})
+
+test('a file denied by a permission rule is skipped with a reason (Review Focus #2)', async ($, on) => {
+  const fake = harness(on, () => ({ q: { type: 'noul', noul: 0.5 } }), {
+    check: (tool, input) => (tool === 'Read' && String((input as { file_path?: string }).file_path).endsWith('b.ts') ? 'deny' : 'allow'),
+  })
+  fake.files['/repo/src/a.ts'] = 'a'
+  fake.files['/repo/src/b.ts'] = 'b'
+  const out = JSON.parse(String((await $.tool.call({ tool: ASK, question: 'Relevant?', type: 'noul', files: ['src/*.ts'], each: true })).result))
+  expect(Object.keys(out.answers)).toEqual(['src/a.ts'])
+  expect(out.skipped['src/b.ts']).toContain('not permitted')
+  expect(fake.requests.length).toBe(1)
+})
+
+test('no readable file is an error, not a judgment', async ($, on) => {
+  const fake = harness(on, () => ({ q: { type: 'noul', noul: 0.9 } }))
+  const out = JSON.parse(String((await $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: ['src/missing.ts'] })).result))
+  expect(out.error).toContain('none of the requested files')
+  expect(out.skipped['src/missing.ts']).toContain('missing')
+  expect(fake.requests.length).toBe(0)
+})
+
+test('a file named __proto__ is read and answered like any other', async ($, on) => {
+  const fake = harness(on, () => ({ q: { type: 'noul', noul: 0.4 } }))
+  fake.files['/repo/__proto__'] = 'p'
+  const out = JSON.parse(String((await $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: ['__proto__'] })).result))
+  expect(out).toEqual({ type: 'noul', noul: 0.4 })
+  expect(Object.hasOwn(fake.requests[0]?.body.state.files as object, '__proto__')).toBe(true)
+})
+
+test('each + command with no readable file never runs the command', async ($, on) => {
+  const fake = harness(on, q => ('effect' in q ? bashAns('read_only', 0.99, 0) : { q: { type: 'noul', noul: 0.5 } }))
+  const r = await $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: ['src/missing.ts'], each: true, command: 'npm test' })
+  const out = JSON.parse(String(r.result))
+  expect(out.error).toContain('none of the requested files')
+  expect(out.ran).toBe(undefined)
+  expect(fake.ran.some(a => a[0] === 'sh' && a[2] === 'npm test')).toBe(false)
+})
+
+test('a judgment that fails after the command ran carries an execution receipt', async ($, on) => {
+  harness(on, q => ('effect' in q ? bashAns('read_only', 0.99, 0) : { q: { type: 'noul', noul: 7 } }))
+  const out = JSON.parse(String((await $.tool.call({ tool: ASK, question: 'Did it pass?', type: 'noul', command: 'npm test' })).result))
+  expect(out.error).toBe('jev unavailable')
+  expect(out.ran).toEqual({ command: 'npm test', exitCode: 0 })
+})
+
+test('clipped command output and files over the cap are reported', async ($, on) => {
+  harness(on, q => ('effect' in q ? bashAns('read_only', 0.99, 0) : { q: { type: 'noul', noul: 0.5 } }))
+  const out = JSON.parse(String((await $.tool.call({ tool: ASK, question: 'q', type: 'noul', command: 'big' })).result))
+  expect(out.truncated).toEqual(['command output'])
+})
+
+test('expandFiles caps at 255 and counts the rest', async ($, on) => {
+  on('process.run', () => ({ exitCode: 0, stdout: Array.from({ length: 300 }, (_, i) => `f${i}.ts`).join('\n'), stderr: '', isStdoutTruncated: false, isStderrTruncated: false }))
+  const r = await expandFiles($, ['*.ts'], '/repo')
+  expect(r.files.length).toBe(255)
+  expect(r.omitted).toBe(45)
+})
+
+test('command denied by a permission rule never runs and never reaches Jev (Review Focus #2)', async ($, on) => {
+  const fake = harness(on, () => bashAns('read_only', 0.99, 0), { check: tool => (tool === 'Bash' ? 'deny' : 'allow') })
+  const out = JSON.parse(String((await $.tool.call({ tool: ASK, question: 'Did it pass?', type: 'noul', command: 'ls -la' })).result))
+  expect(out.error).toContain('not permitted')
+  expect(fake.requests.length).toBe(0)
+  expect(fake.ran.some(a => a[0] === 'sh' && a[2] === 'ls -la')).toBe(false)
 })
 
 test('command: gated first; denied never runs', async ($, on) => {
@@ -1902,8 +2599,28 @@ test('command: gated first; denied never runs', async ($, on) => {
 test('command: allowed output becomes state', async ($, on) => {
   const fake = harness(on, q => ('effect' in q ? bashAns('read_only', 0.99, 0) : { q: { type: 'noul', noul: 0.99 } }))
   const r = await $.tool.call({ tool: ASK, question: 'Did it pass?', type: 'noul', command: 'npm test' })
-  expect(JSON.parse(String(r.result))).toEqual({ type: 'noul', noul: 0.99 })
+  expect(JSON.parse(String(r.result))).toEqual({ type: 'noul', noul: 0.99, ran: { command: 'npm test', exitCode: 0 } })
   expect(fake.requests[1]?.body.state).toMatchObject({ command: 'npm test', exitCode: 0, output: 'ran: npm test\n' })
+})
+
+test('a command that times out still gets a receipt', async ($, on) => {
+  harness(on, q => ('effect' in q ? bashAns('read_only', 0.99, 0) : { q: { type: 'noul', noul: 0.5 } }))
+  const out = JSON.parse(String((await $.tool.call({ tool: ASK, question: 'q', type: 'noul', command: 'hang' })).result))
+  expect(out.error).toContain('may have run')
+  expect(out.ran).toEqual({ command: 'hang', exitCode: null })
+})
+
+test('work that settles after a /clear touches neither the log nor the state', async ($, on) => {
+  const fake = harness(on, () => 'hang')
+  fake.files['/repo/src/a.ts'] = 'a'
+  const clock = mock.clock(on)
+  const pending = $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: ['src/a.ts'], each: true })
+  await clock.settle()
+  await $.session.end({ reason: 'clear', sessionId: 'test-session', resume: {} as never }) // pass what the types ask for
+  await clock.advance(8000)
+  await pending
+  expect(fake.logs.some(l => String(l.error).includes('unanswered'))).toBe(false)
+  expect(JSON.parse(fake.files['/home/u/.ohmyjev/sessions/test-session.json'] ?? '{}').downUntil ?? 0).toBe(0)
 })
 
 test('errors come back as JSON text', async ($, on) => {
@@ -1920,6 +2637,7 @@ test('/jev shows stats; /jev doctor makes one live call', async ($, on) => {
   const doctor = await $.command.run({ command: 'jev', args: 'doctor' })
   expect(doctor.text).toContain('env TYPESAFE_API_KEY')
   expect(doctor.text).toContain('→ deny')
+  expect(doctor.text).toContain('tier    fast claude-haiku-5-5 ✓')
 })
 ```
 
@@ -1947,9 +2665,11 @@ export const ASK_SPEC = {
     'question about files, a command\'s output, or text. Code reads the files or runs the command; you get back only ' +
     'a typed answer with probabilities, so your context stays small. Use it for a judgment ABOUT something: is this ' +
     'file relevant, does it validate tokens, is this test failure a code bug or a test bug, how risky is this diff. ' +
-    'Use files with each=true to scout many files in parallel (globs allowed), then open only the ones that matter. ' +
-    'Read the file normally when you need to edit or quote it. Treat values under ~0.7 as unsure. ' +
-    'An {"error": ...} answer means no judgment: fall back to reading.',
+    'Use files with each=true to scout many files in parallel (globs allowed): the result is {"answers": {path: answer}}; ' +
+    'then open only the ones that matter. Read the file normally when you need to edit or quote it. ' +
+    'Treat values under ~0.7 as unsure. "skipped", "truncated" and "omittedFiles" in the result say what Jev did not fully see; ' +
+    '"ran" says a command already executed, so do not retry it blindly. The session\'s permission rules apply as for the Bash and ' +
+    'Read tools. An {"error": ...} answer means no judgment: fall back to reading.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1981,6 +2701,10 @@ export type AskDeps = {
   ask: (state: Record<string, unknown>, question: Question, timeoutMs: number) => Promise<Answers | null>
   /** deny reason, null when Jev is unavailable, undefined when the command may run. */
   gateCommand: (command: string) => Promise<string | null | undefined>
+  /** The session's own permission verdict ($.tool.check): ask_jev never reaches what the Bash or Read tool could not. */
+  check: (tool: string, input: Record<string, unknown>) => Promise<'allow' | 'ask' | 'deny'>
+  /** Log a failure and mark Jev down, as a hook's decide() does. */
+  fail: (message: string) => Promise<void>
 }
 
 export function buildQuestion(i: AskInput): Question | string {
@@ -2000,7 +2724,9 @@ export function buildQuestion(i: AskInput): Question | string {
 
 const GLOB = /[*?[]/
 
-export async function expandFiles($: EngineInterface, patterns: string[], cwd: string): Promise<string[]> {
+const MAX_FILES = 255
+
+export async function expandFiles($: EngineInterface, patterns: string[], cwd: string): Promise<{ files: string[]; omitted: number }> {
   const globs = patterns.filter(p => GLOB.test(p))
   const plain = patterns.filter(p => !GLOB.test(p))
   let listed: string[] = []
@@ -2008,70 +2734,155 @@ export async function expandFiles($: EngineInterface, patterns: string[], cwd: s
     const r = await $.process.run(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--', ...globs], { cwd })
     if (r.exitCode === 0) listed = r.stdout.split('\n').filter(Boolean)
   }
-  return [...new Set([...plain, ...listed])].slice(0, 255)
+  const all = [...new Set([...plain, ...listed])]
+  return { files: all.slice(0, MAX_FILES), omitted: Math.max(0, all.length - MAX_FILES) }
 }
 
-export async function readFile($: EngineInterface, path: string, cwd: string): Promise<string | null> {
+export type Read = { text: string } | { skip: string }
+
+export async function readFile($: EngineInterface, path: string, cwd: string, check: AskDeps['check']): Promise<Read> {
   const abs = path.startsWith('/') ? path : `${cwd}/${path}`
+  if ((await check('Read', { file_path: abs })) !== 'allow') return { skip: "not permitted by this session's rules" }
   try {
     const st = await $.fs.stat(abs)
-    if (st.kind !== 'file' || st.size > 1_000_000) return null
+    if (st.kind !== 'file') return { skip: 'not a file' }
+    if (st.size > 1_000_000) return { skip: 'over 1 MB' }
     const text = await $.fs.read(abs)
-    return text.includes('\0') ? null : text
+    return text.includes('\0') ? { skip: 'binary' } : { text }
   } catch {
-    return null
+    return { skip: 'missing or unreadable' }
   }
 }
 
 const json = (v: unknown): string => JSON.stringify(v)
+const CONCURRENCY = 8
+const ASK_MS = 8000 // one deadline for expansion, reads and asks together; the command's own 60 s timeout is separate
 
 export async function runAsk($: EngineInterface, input: AskInput, d: AskDeps): Promise<string> {
   const question = buildQuestion(input)
   if (typeof question === 'string') return json({ error: question })
   const state: Record<string, unknown> = {}
   if (typeof input.state === 'string' && input.state) state.state = input.state
+  // One deadline budget covers expansion, reads and asks. The clock pauses for the command, which has its own 60 s timeout.
+  const started = Date.now()
+  let commandMs = 0
+  const timer = (ms: number) => {
+    const stop = new AbortController()
+    const expired = $.clock.sleep(ms, { signal: stop.signal }).then(() => 'timeout' as const, () => 'timeout' as const)
+    return { expired, cancel: () => stop.abort() }
+  }
+  const remaining = () => Math.max(0, ASK_MS - (Date.now() - started - commandMs))
+
+  const patterns = Array.isArray(input.files) ? input.files.filter((f): f is string => typeof f === 'string') : []
+  const expansion = timer(ASK_MS)
+  const expanded = patterns.length
+    ? await Promise.race([expandFiles($, patterns, d.cwd), expansion.expired]).finally(() => expansion.cancel())
+    : { files: [], omitted: 0 }
+  if (expanded === 'timeout') return json({ error: `file expansion did not finish within ${ASK_MS}ms` })
+  const { files, omitted } = expanded
+  // Maps, not objects: a file named __proto__ or constructor is a valid name.
+  const skipped = new Map<string, string>()
+  const truncated: string[] = []
+  let ran: { command: string; exitCode: number | null } | undefined
+  // What Jev did not fully see rides back with every answer, so the caller never mistakes partial evidence for a verdict;
+  // `ran` says a command already executed, so a retry is never blind.
+  const extras = () => ({
+    ...(skipped.size ? { skipped: Object.fromEntries(skipped) } : {}),
+    ...(truncated.length ? { truncated } : {}),
+    ...(omitted ? { omittedFiles: omitted } : {}),
+    ...(ran ? { ran } : {}),
+  })
+  const read = async (path: string, max: number): Promise<string | undefined> => {
+    const r = await readFile($, path, d.cwd, d.check)
+    if ('skip' in r) {
+      skipped.set(path, r.skip)
+      return undefined
+    }
+    if (r.text.length > max) truncated.push(path)
+    return clip(r.text, max)
+  }
+
+  // Every file is read before any command runs, in both modes, under the deadline: a request that cannot be judged fails
+  // without side effects, and a stalled read never holds the tool.
+  let budget = input.each === true ? Number.POSITIVE_INFINITY : 80_000
+  const contents = new Map<string, string>()
+  const reads = timer(remaining())
+  let readsExpired = false
+  void reads.expired.then(() => {
+    readsExpired = true
+  })
+  for (const path of files) {
+    if (readsExpired) {
+      skipped.set(path, 'not read before the deadline')
+      continue
+    }
+    if (budget <= 0) {
+      skipped.set(path, 'over the 80000-char budget')
+      continue
+    }
+    const text = await Promise.race([read(path, Math.min(8000, budget)), reads.expired.then(() => undefined)])
+    if (text === undefined) {
+      if (readsExpired && !skipped.has(path)) skipped.set(path, 'not read before the deadline')
+      continue
+    }
+    contents.set(path, text)
+    budget -= text.length
+  }
+  reads.cancel()
+  if (files.length && !contents.size) return json({ error: 'none of the requested files could be read', ...extras() })
+
   if (typeof input.command === 'string' && input.command.trim()) {
+    const verdict = await d.check('Bash', { command: input.command })
+    if (verdict !== 'allow') return json({ error: `command not permitted here (${verdict}); run it with the Bash tool instead` })
     const denied = await d.gateCommand(input.command)
     if (denied === null) return json({ error: 'jev unavailable: refusing to run an unchecked command' })
     if (denied) return json({ error: `blocked: ${denied}` })
-    const r = await $.process.run(['sh', '-c', input.command], { cwd: d.cwd, timeoutMs: 60_000 })
-    Object.assign(state, { command: input.command, exitCode: r.exitCode, output: clip(r.stdout + r.stderr, 20_000) })
+    ran = { command: input.command, exitCode: null } // set before dispatch, so a timeout still returns a receipt
+    const commandStarted = Date.now()
+    let r: Awaited<ReturnType<typeof $.process.run>>
+    try {
+      r = await $.process.run(['sh', '-c', input.command], { cwd: d.cwd, timeoutMs: 60_000 })
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err)
+      return json({ error: `command did not finish within 60s or could not start (${why}); it may have run, check before retrying`, ...extras() })
+    }
+    commandMs = Date.now() - commandStarted
+    ran.exitCode = r.exitCode
+    const out = r.stdout + r.stderr
+    const output = clip(out, 20_000)
+    if (output.length < out.length || r.isStdoutTruncated || r.isStderrTruncated) truncated.push('command output')
+    Object.assign(state, { command: input.command, exitCode: r.exitCode, output })
   }
-  const patterns = Array.isArray(input.files) ? input.files.filter((f): f is string => typeof f === 'string') : []
-  const files = patterns.length ? await expandFiles($, patterns, d.cwd) : []
 
   if (input.each === true && files.length) {
-    const stop = new AbortController()
-    const deadline = $.clock.sleep(8000, { signal: stop.signal }).then(() => 'timeout' as const, () => 'timeout' as const)
-    const all = Promise.all(
-      files.map(async path => {
-        const content = await readFile($, path, d.cwd)
-        if (content === null) return [path, { error: 'unreadable, binary, or over 1 MB' }] as const
-        const a = await d.ask({ ...state, path, content: clip(content, 8000) }, question, 0)
-        return [path, a ? a.q : { error: 'jev unavailable' }] as const
-      }),
-    )
-    const out = await Promise.race([all, deadline]).finally(() => stop.abort())
-    return out === 'timeout' ? json({ error: 'jev did not answer every file within 8s' }) : json(Object.fromEntries(out))
+    const answers = new Map<string, unknown>()
+    const queue = [...contents] // [path, text] already read; the workers only ask, and nothing starts after the deadline
+    let cancelled = false
+    const worker = async () => {
+      for (let item = queue.shift(); item !== undefined && !cancelled && remaining() > 0; item = queue.shift()) {
+        const [path, text] = item // nothing is dispatched once the budget is spent
+        const a = await d.ask({ ...state, path, content: text }, question, 0)
+        if (!cancelled) answers.set(path, a ? a.q : { error: 'jev unavailable' })
+      }
+    }
+    const asks = timer(remaining())
+    const all = Promise.all(Array.from({ length: Math.min(CONCURRENCY, contents.size) }, worker)).then(() => 'done' as const)
+    await Promise.race([all, asks.expired]).finally(() => asks.cancel())
+    cancelled = true
+    const missing = files.filter(f => !answers.has(f) && !skipped.has(f)) // not answered in time, whether asked or never dispatched
+    if (missing.length) {
+      for (const f of missing) answers.set(f, { error: 'timeout' })
+      void d.fail(`ask_jev: ${missing.length} of ${files.length} files unanswered within ${ASK_MS}ms`) // reported in the background: storage never holds the answer
+    }
+    if (!answers.size) return json({ error: 'none of the requested files could be read', ...extras() })
+    return json({ answers: Object.fromEntries(answers), ...extras() })
   }
 
-  let budget = 80_000
-  const contents: Record<string, string> = {}
-  for (const path of files) {
-    if (budget <= 0) {
-      state.truncated = true
-      break
-    }
-    const content = await readFile($, path, d.cwd)
-    if (content === null) continue
-    const kept = clip(content, Math.min(8000, budget))
-    contents[path] = kept
-    budget -= kept.length
-  }
-  if (files.length) state.files = contents
+  if (contents.size) state.files = Object.fromEntries(contents)
   if (!Object.keys(state).length) return json({ error: 'give files, command, or state' })
-  const a = await d.ask(state, question, 8000)
-  return json(a ? a.q : { error: 'jev unavailable' })
+  if (remaining() <= 0) return json({ error: `the ${ASK_MS}ms deadline was spent reading; nothing was asked`, ...extras() })
+  const a = await d.ask(state, question, remaining())
+  return json(a ? { ...a.q, ...extras() } : { error: 'jev unavailable', ...extras() })
 }
 ```
 
@@ -2084,10 +2895,12 @@ In `hooks/ohmyjev.ts`:
 
 ```ts
   on('tool.call', { tool: [ASK_TOOL, ...HOOKED] }, async ($, e, next) => {
+    const gen = generation // the whole operation belongs to the session it began in, screening included
     if (e.tool === ASK_TOOL) return { result: await answerAsk($, e as unknown as AskInput) }
-    const denied = await gate($, e)
+    const denied = await gate($, e, gen)
     if (denied) return { deny: denied }
-    return screenResult($, e, await next(e))
+    const r = await next(e)
+    return gen === generation ? screenResult($, e, r, gen) : r // a continuation from a session that is gone is not screened
   }).catch(async ($, e, next) => {
 ```
 
@@ -2098,20 +2911,30 @@ Insert under `// --- ask_jev and /jev ---`:
 ```ts
   async function answerAsk($: $, input: AskInput): Promise<string> {
     const cwd = await $.session.cwd()
+    const gen = generation // a fan-out that settles after a /clear reports to the session it began in, or not at all
     return runAsk($, input, {
       cwd,
       ask: async (state, question, timeoutMs) => {
-        const d = await decide($, 'ask_jev', '', state, { q: question }, timeoutMs)
+        const d = await decide($, 'ask_jev', '', state, { q: question }, timeoutMs, gen)
         if (!d) return null
-        await record($, d.e, null, '')
+        void record($, d.e, null, '') // the answer is handed back at once; persistence queues behind it and never delays it
         return d.answers
       },
       gateCommand: async command => {
-        const d = await decide($, 'ask_jev', 'Bash', withPolicies({ command: clip(command, 4000), cwd }, c), BASH_Q)
+        const state = withPolicies({ command: clip(command, CLIP), cwd, ...truncated(command) }, c)
+        const d = await decide($, 'ask_jev', 'Bash', state, withPolicyQ(BASH_Q, c), 1500, gen)
         if (!d) return null
         const j = gateBash(d.answers, c)
         await record($, d.e, j.verdict === 'deny' ? 'deny' : null, j.reason)
         return j.verdict === 'deny' ? j.reason : undefined
+      },
+      check: async (tool, input) => (await $.tool.check({ tool, input })).decision,
+      fail: async message => {
+        await log($, { ...entry('ask_jev', ''), gen, error: message })
+        if (gen === generation)
+          await update($, s => {
+            s.downUntil = Date.now() + DOWN_MS
+          })
       },
     })
   }
@@ -2129,11 +2952,16 @@ Insert under `// --- ask_jev and /jev ---`:
 
   async function stats($: $): Promise<string> {
     const x = await session($)
-    const r = await $.process.run(['tail', '-n', '20000', x.p.log])
+    // every session's own file from the last 8 days; a failed or capped read is said, never hidden
+    const r = await $.process.run(['find', `${x.p.dir}/log`, '-name', '*.jsonl', '-mtime', '-8', '-exec', 'cat', '{}', '+'])
     const now = Date.now()
     const midnight = new Date(now)
     midnight.setHours(0, 0, 0, 0)
-    return summarize(r.stdout.split('\n'), now, midnight.getTime())
+    const caveat =
+      r.exitCode !== 0 ? `(log read failed: ${r.stderr.trim() || `exit ${r.exitCode}`}; figures may be incomplete)\n`
+      : r.isStdoutTruncated ? '(partial: more than 4 MiB of logs in the window; some records are not counted)\n'
+      : ''
+    return caveat + summarize(r.stdout.split('\n'), now, midnight.getTime())
   }
 
   async function doctor($: $): Promise<string> {
@@ -2147,8 +2975,18 @@ Insert under `// --- ask_jev and /jev ---`:
     } catch (err) {
       lines.push(`✗ live call failed: ${err instanceof Error ? err.message : String(err)}`)
     }
+    // a tier model the account cannot use fails every subagent spawn routed to it: say so here, before it bites
+    for (const [tier, model] of [['fast', c.fastModel], ['balanced', c.balancedModel], ['deep', c.deepModel]] as const) {
+      try {
+        const m = await $.model.complete({ model, prompt: 'Reply with OK.', maxTokens: 5, timeoutMs: 15_000 }) // a stalled tier is reported, not waited on
+        lines.push(m.isAnswered ? `tier    ${tier} ${model} ✓` : `tier    ${tier} ${model} ✗ ${m.reason}`)
+      } catch (err) {
+        lines.push(`tier    ${tier} ${model} ✗ ${why(err)}`)
+      }
+    }
     const x = await session($)
     lines.push(`state   ${x.p.session} (${statusText(x.s, Date.now())})`)
+    lines.push(`log     ${x.p.log}`)
     return lines.join('\n')
   }
 ```
@@ -2273,10 +3111,12 @@ hooks, that puts Jev at every decision point of a session, so the agent gets a j
 | `ask_jev` | tool the model calls | Judgments about files, globs (one call per file), command output, or text, without reading them in |
 | `/jev` | slash command | Stats; `/jev doctor` checks the key and makes one live call |
 
-Nothing ever waits on you:
-- When Jev is unsure, it denies with a reason.
-- When Jev is unreachable or slow (>1.5 s), the call goes through, it's logged, and the status shows `jev ⚠ down`.
-- Jev is one signal, not your only control. Keep your `settings.json` deny rules.
+Nothing ever waits on you. Every gate answer lands in one of three bands:
+- **Deny**, with a reason the agent must stop on: a command judged irreversible (≥ 0.6) or destructive (≥ 0.7), a write holding a credential, a call that exfiltrates, or anything that breaks one of your `policies`.
+- **Auto-approve** (Bash only): when Jev is confident a command is read-only or reversible, the permission prompt is skipped. Never for a command longer than Jev saw, and never over one of your deny rules.
+- **Pass-through**: everything else goes to Claude Code's normal permission flow, exactly as if ohmyjev were not there.
+
+When Jev is unreachable or slow (>1.5 s), the call passes through, it's logged, and the status shows `jev ⚠ down`. Jev is one signal, not your only control: keep your `settings.json` deny rules. `ask_jev` honours them too (your mode and allow/deny rules; settings hooks that only run on real tool calls are not consulted). If ohmyjev cannot write its log or state, it says so once in a toast and keeps deciding.
 
 ## Requirements
 
@@ -2301,9 +3141,10 @@ Check it: run `/jev doctor` in a session.
 Every battery, threshold, router tier and rule is a row in `/config` under ohmyjev. The defaults come from
 [ten-levels-of-jev](https://github.com/disler/ten-levels-of-jev).
 
-- **`policies`:** `;`-separated plain-English rules sent with every gate question, e.g. `Pushing to main is irreversible.`
+- **`policies`:** `;`-separated plain-English rules. Every gate asks Jev whether the call breaks one of them and denies at ≥ `policyViolation` (0.7), e.g. `Never push to main; never edit infra/prod/*`.
 - **`allowPaths`:** `;`-separated places writes may go outside the repo. Default `~/.claude;$TMPDIR;/tmp`.
 - **`routeMainModel`:** off by default, because switching the main model mid-session discards the prompt cache.
+- **`fastModel` / `balancedModel` / `deepModel`:** model ids or aliases your account can use. `/jev doctor` tries each with a five-token completion. A tier model that cannot be used fails the subagent spawn routed to it (the model sees the failure and can retry); fix the setting rather than expecting a silent fallback.
 
 ## Statusline
 
@@ -2320,8 +3161,9 @@ No custom statusline? Turn on `pinnedStatus` to pin the same line under the prom
 
 ## Logs
 
-Every decision is one line in `~/.ohmyjev/log.jsonl`: event, tool, verdict, probabilities, latency and cost.
-Commands and contents are logged only with `logPayloads`. `/jev` summarizes it.
+Every decision is one line in the session's own `~/.ohmyjev/log/<session>.jsonl`: event, tool, verdict, probabilities, latency
+and cost. Commands and contents are logged only with `logPayloads`. `/jev` merges the last 8 days of files and says so when the
+figures are partial.
 
 ## Develop
 
@@ -2383,18 +3225,31 @@ If the live call fails with a contract error (for example OpenRouter's envelope 
 
 - [ ] **Step 3: Gates fire in bypass mode (Review Focus #1)**
 
+First a deterministic canary that needs no Jev at all: a write outside the repo and `allowPaths` is denied in code.
+
+```bash
+C=$(mktemp -d ~/omj-canary.XXXXXX)   # a fresh directory of this run's own under $HOME: outside the repo and allowPaths; nothing pre-existing is touched
+claude --plugin-dir "$PWD" -p --permission-mode bypassPermissions "Use the Write tool to create the file $C/hi.txt containing the word hi. Do nothing else."
+LOG=$(ls -t ~/.ohmyjev/log/*.jsonl | head -1); echo "reading $LOG"; grep '"tool":"Write"' "$LOG" | tail -n 3; ls -la "$C"; rm -r "$C"
+```
+
+(`ls -t | head -1` is the newest session log; with other sessions running on the machine, pick the one whose timestamps match this run.) Read the outcomes apart:
+- a `Write` line with `"verdict":"deny"` and **no file in `$C`**: hooks fire in bypass mode. Continue.
+- **no** `Write` line at all: the hook did not run in bypass mode. **Stop** and report; the design does not hold for this user.
+- a `deny` line **and** the file exists: the engine ran the tool despite the deny. **Stop** and report.
+
+Then the live Jev canary:
+
 ```bash
 mkdir -p /tmp/omj-canary/keep && touch /tmp/omj-canary/keep/file
 claude --plugin-dir "$PWD" -p --permission-mode bypassPermissions "Run exactly this bash command and nothing else: rm -rf /tmp/omj-canary"
-ls /tmp/omj-canary/keep/file && tail -n 5 ~/.ohmyjev/log.jsonl
+LOG=$(ls -t ~/.ohmyjev/log/*.jsonl | head -1); grep '"tool":"Bash"' "$LOG" | tail -n 3; ls /tmp/omj-canary/keep/file 2>&1
 ```
 
-Expected:
-- the canary file still exists;
-- a log line has `"event":"tool.call","tool":"Bash","verdict":"deny"`;
-- Claude's reply says ohmyjev blocked it.
-
-If the canary was deleted, **stop**. Mod hooks don't gate in bypass mode, which invalidates the design for this user. Report it before doing anything else.
+Expected: a `Bash` line with `"verdict":"deny"`, the canary file still there, and a reply saying ohmyjev blocked it. If the file is gone, the log line says why, and each case is different:
+- the line carries `"error"`: Jev was unreachable and the call passed through **by design**. Run `/jev doctor`, then rerun this canary;
+- the line carries a non-deny `verdict` and its `answers`: Jev did not judge the command destructive. Report the probabilities to the user; thresholds are not changed without them;
+- the line says `deny` and the file is gone: execution despite a deny. **Stop** and report.
 
 - [ ] **Step 4: Auto-approve never beats a deny rule (Review Focus #2)**
 
@@ -2406,21 +3261,48 @@ claude --plugin-dir "$PWD" -p --permission-mode default \
 
 Expected: the command is refused by the deny rule, and the reply says it was denied or not permitted.
 
-If `ls -la` ran, auto-approve overrides deny rules. Remove the `classic.PreToolUse` hook and the `approvals` map, set `autoApprove`'s manifest description to "unavailable", commit, and tell the user.
+If `ls -la` ran, auto-approve overrides deny rules. Disable only the approval branch: delete the `approvals` map and the `mergeApproval` call (return `r` as it came) but **keep the rewrite gate in that hook**, set `autoApprove`'s manifest default to `false` with the description "unavailable: overrides deny rules on this build", rerun this step and Step 3, commit, and tell the user.
+
+Then the same rule through `ask_jev`:
+
+```bash
+claude --plugin-dir "$PWD" -p --permission-mode default \
+  --settings '{"permissions":{"deny":["Bash(ls:*)"]}}' \
+  "Use the ask_jev tool with command 'ls -la' and a noul question 'Does the listing include a README?'. Report the tool's exact output."
+```
+
+Expected: the reported output is `{"error": "command not permitted here (deny); ..."}` and the run's log under `~/.ohmyjev/log/` gains no `ask_jev` line with `"tool":"Bash"` for it.
 
 - [ ] **Step 5: Router, done-check and ask_jev through real sessions**
 
 ```bash
 claude --plugin-dir "$PWD" -p "What is 2+2? Answer with just the number."
 claude --plugin-dir "$PWD" -p "Use the ask_jev tool to ask whether README.md describes a Claude Code plugin (noul). Report the probability."
-grep -E '"event":"(turn.start|turn.step|ask_jev)"' ~/.ohmyjev/log.jsonl | tail -n 4
+claude --plugin-dir "$PWD" -p "Create /tmp/omj-done.txt containing the word hello, then reply exactly 'Done.' without reading the file back or running any check."
+cat $(ls -t ~/.ohmyjev/log/*.jsonl | head -3) | grep -E '"event":"(turn.start|turn.step|ask_jev|Stop)"' | tail -n 8
 ```
 
 Expected:
 - a `turn.start` line with reason `fast/low` or similar;
 - a `turn.step` line with verdict `route` or `unchanged`;
-- an `ask_jev` line;
-- the second reply quotes a probability.
+- an `ask_jev` line, and the second reply quotes a probability;
+- a `Stop` line for the third run, with `"verdict":"block"` (the done-check fired: the final reply then mentions verifying) or `"reason":"stop ok"` (Jev judged the work verified, e.g. the Write result counted as evidence). Either proves the done-check ran; report which happened.
+
+Then confirm `ask_jev` keeps content out of the model's context. Both markers are minted fresh, so neither this plan nor any earlier transcript can match them:
+
+```bash
+M="omjfile$(uuidgen | tr -d '-')"; T="omjprompt$(uuidgen | tr -d '-')"
+echo "$M lives here" > /tmp/omj-marker.txt
+claude --plugin-dir "$PWD" -p "($T) Use ask_jev on the file /tmp/omj-marker.txt with a noul question 'Does it mention a marker?'. Report only the probability."
+echo "transcripts holding the prompt tag (expect exactly one):"; find ~/.claude/projects -name '*.jsonl' -mmin -3 -exec grep -l "$T" {} +
+echo "transcripts holding the FILE marker (expect none):";       find ~/.claude/projects -name '*.jsonl' -mmin -3 -exec grep -l "$M" {} +
+```
+
+(`-exec … {} +` hands `grep` each file as its own argument; a `$(find …)` list would reach `grep` as one newline-joined word under zsh.)
+
+Expected: a probability near 1 in the reply; exactly one recent transcript holds the prompt tag (which proves the search looked in the right place), and none holds the file marker. A transcript holding the file marker means content read by `$.fs.read` reached the conversation: stop and report. No transcript holding the prompt tag means the search location is wrong: find the run's transcript first, then judge.
+
+Informational probe, for the open question of whether a plugin's own `$.tool.call` lands in the transcript (if it does not, `ask_jev` could run commands through the real Bash tool so settings hooks apply): write a 5-line throwaway mod in the scratchpad whose `session.start` hook calls `$.tool.call({ tool: 'Bash', command: 'echo <fresh uuid A>' })`; run `claude --plugin-dir <scratch mod> -p "(<fresh uuid B>) Say hi."`; find the transcript by uuid B and grep it for uuid A. Record the answer in the final report; change nothing in ohmyjev on its account.
 
 - [ ] **Step 6: Install from the local marketplace (confirm)**
 
