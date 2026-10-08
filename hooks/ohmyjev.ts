@@ -240,11 +240,9 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
 
 // --- injection screen (after the tool ran): Bash, WebFetch, MCP, and Reads from outside the repo ---
 
-/** A Read is screened only from outside the repo: what lives in the repo is the user's own. */
+/** A Read is screened only from outside the repo and allowPaths: those (memory, skills under ~/.claude) are the user's own. */
 async function readOutsideRepo($: $, e: { tool: string }): Promise<boolean> {
-  if (!c.screenReads) return false
-  const home = (await $.env.get('HOME')) ?? ''
-  return !isUnder(absolute(arg(e, 'file_path'), await $.session.cwd(), home), normalize(await $.session.root()))
+  return c.screenReads && !(await pathAllowed($, arg(e, 'file_path'), await $.session.cwd()))
 }
 
 async function screenResult($: $, e: { tool: string }, r: ToolCallResult): Promise<ToolCallResult> {
@@ -289,6 +287,7 @@ async function answerAsk($: $, e: Record<string, unknown>): Promise<ToolCallResu
   let budget = ASK_TOTAL
   for (const f of (Array.isArray(e.files) ? e.files : []).filter((f): f is string => typeof f === 'string').slice(0, 255)) {
     if (!(await pathAllowed($, f, cwd, false))) files[f] = '[outside the repo: not sent]'
+    else if (budget <= 0) files[f] = '[over the size budget: not sent]'
     else {
       const text = await $.fs.read(absolute(f, cwd, home)).catch(() => undefined)
       files[f] = typeof text === 'string' ? clip(text, Math.min(ASK_FILE, budget)) : '[unreadable]'
@@ -317,6 +316,7 @@ async function jevReport($: $): Promise<string> {
 // --- router: classify once per turn, then steer effort (main loop) and the subagent model ---
 
 async function classify($: $, text: string): Promise<void> {
+  if (!text.trim()) return // a continuation: keep this task's route
   route = undefined
   if (!(c.routeEffort || c.routeSubagents || c.routeMainModel) || /^\/\S+\s*$/.test(text.trim())) return
   const d = await decide($, 'turn.start', '', { request: clip(text, 1500) }, ROUTE_Q)
@@ -353,7 +353,7 @@ export const register: Register = (on, options) => {
   })
 
   on('agent.spawn', ($, e, next) => {
-    if (!route || !c.routeSubagents || e.model || e.subagentType === 'fork') return next(e)
+    if (!route || !c.routeSubagents || e.model || e.fork || e.subagentType !== 'general-purpose') return next(e)
     return next({ ...e, model: modelOf(route.tier, c) })
   }).catch(($, e, next) => next(e))
 

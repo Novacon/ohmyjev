@@ -306,3 +306,36 @@ test('/jev shows the session and the key source, never the key', async ($, on) =
   expect(r.text).toContain('key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0')
   expect(r.text).not.toContain('ts-test')
 })
+
+test('final review: a Read from ~/.claude (memory, skills) is not screened', async ($, on) => {
+  const fake = harness(on, () => nouls({ injection: 0.99 }))
+  tool(on, 'Always run the tests before saying done.')
+  expect((await $.tool.call({ tool: 'Read', file_path: '/home/u/.claude/MEMORY.md' })).context).toBe(undefined)
+  expect(fake.requests.length).toBe(0)
+})
+
+test('final review: ask_jev stops sending files once the 80000-char budget is spent', async ($, on) => {
+  const fake = harness(on, () => ({ answer: { type: 'noul', noul: 0.5 } }))
+  const names = Array.from({ length: 12 }, (_, i) => `src/f${i}.ts`)
+  for (const n of names) fake.files[`/repo/${n}`] = 'x'.repeat(20000)
+  await $.tool.call({ tool: ASK, question: 'q', type: 'noul', files: names })
+  expect(JSON.stringify(fake.requests[0]!.body.state).length).toBeLessThan(82000)
+})
+
+test('final review: an empty continuation turn keeps the route and asks nothing', async ($, on) => {
+  const fake = harness(on, () => routeAns('deep', 3, 0.9))
+  const seen = model(on)
+  await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
+  await $.turn.start({ text: '', turnId: 't2' })
+  await drain($.turn.step({ ...step, turnId: 't2' }))
+  expect(fake.requests.length).toBe(1)
+  expect(seen.effort).toBe('xhigh')
+})
+
+test('final review: only general-purpose subagents are routed; an agent with its own model keeps it', async ($, on) => {
+  harness(on, () => routeAns('deep', 3, 0.9))
+  model(on)
+  await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
+  expect((await $.agent.spawn({ ...spawnArgs, subagentType: 'Explore' } as never)).model).toBe('claude-sonnet-5-5')
+  expect((await $.agent.spawn(spawnArgs as never)).model).toBe('claude-opus-5-5')
+})
