@@ -342,7 +342,7 @@ export const EMPTY_SESSION: SessionState = { calls: 0, denies: 0, downUntil: 0, 
 export function statusText(s: SessionState, now: number): string {
   if (s.noKey) return 'jev ⚠ no key'
   if (s.downUntil > now) return 'jev ⚠ down'
-  return s.denies ? `jev ✓${s.calls} ⛔${s.denies}` : `jev ✓${s.calls}`
+  return [`jev ✓${s.calls}`, s.denies ? `⛔${s.denies}` : '', s.lastRoute, s.compactions ? `🗜${s.compactions}` : ''].filter(Boolean).join(' ')
 }
 
 export type LogEntry = {

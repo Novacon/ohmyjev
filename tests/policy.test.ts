@@ -69,6 +69,8 @@ test('text and status', () => {
   expect(statusText(EMPTY_SESSION, 0)).toBe('jev ✓0')
   expect(statusText({ ...EMPTY_SESSION, downUntil: 10 }, 5)).toBe('jev ⚠ down')
   expect(statusText({ ...EMPTY_SESSION, noKey: true }, 0)).toBe('jev ⚠ no key')
+  expect(statusText({ ...EMPTY_SESSION, calls: 23, denies: 1, lastRoute: '↑opus/high', compactions: 2 }, 0)).toBe('jev ✓23 ⛔1 ↑opus/high 🗜2')
+  expect(statusText({ ...EMPTY_SESSION, calls: 4, lastRoute: '↓sonnet/low' }, 0)).toBe('jev ✓4 ↓sonnet/low')
 })
 
 test('exfil gate and policies', () => {

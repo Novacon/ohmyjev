@@ -13,7 +13,7 @@ import time
 
 
 def jev_segment(session_id):
-    """'' without state for this session; else 'jev ✓23 ⛔1', 'jev ⚠ down' or 'jev ⚠ no key'."""
+    """'' without state for this session; else 'jev ✓23 ⛔1 ↑opus/high 🗜2', 'jev ⚠ down' or 'jev ⚠ no key'."""
     home = os.environ.get("OHMYJEV_HOME") or os.path.expanduser("~/.ohmyjev")
     sid = re.sub(r"[^\w-]", "", str(session_id or ""))
     if not sid:
@@ -29,8 +29,14 @@ def jev_segment(session_id):
         return "jev ⚠ no key"
     if s.get("downUntil", 0) > time.time() * 1000:
         return "jev ⚠ down"
-    seg = "jev ✓%d" % s.get("calls", 0)
-    return seg + (" ⛔%d" % s["denies"] if s.get("denies") else "")
+    parts = ["jev ✓%d" % s.get("calls", 0)]
+    if s.get("denies"):
+        parts.append("⛔%d" % s["denies"])
+    if s.get("lastRoute"):
+        parts.append(str(s["lastRoute"]))
+    if s.get("compactions"):
+        parts.append("🗜%d" % s["compactions"])
+    return " ".join(parts)
 
 
 if __name__ == "__main__":
@@ -50,4 +56,7 @@ if __name__ == "__main__":
         with open(path, "w") as f:
             json.dump({"noKey": True}, f)
         assert jev_segment("evil") == "jev ⚠ no key"
+        with open(path, "w") as f:
+            json.dump({"calls": 23, "denies": 1, "lastRoute": "↑opus/high", "compactions": 2}, f)
+        assert jev_segment("evil") == "jev ✓23 ⛔1 ↑opus/high 🗜2", jev_segment("evil")
     print("ok")
