@@ -156,3 +156,10 @@ test('asks the pinned model at TypeSafe and logs that model, not one echoed back
   expect(fake.requests[0]?.body.model).toBe('jev-1.13.0')
   expect(fake.logs[0]).toMatchObject({ model: 'jev-1.13.0', inputTokens: 100 })
 })
+
+test('a done-check failure of ours passes the stop through, running the user\'s Stop hooks once', async ($, on) => {
+  const fake = harness(on, () => stopAns({ claimed_done: 0.9, verified: 0.1 }), { messages: 'throw' })
+  const r = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'All done.' })
+  expect(r.block).toBe(undefined)
+  expect(fake.stops).toBe(1)
+})

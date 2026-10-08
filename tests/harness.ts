@@ -7,6 +7,7 @@ export type Fake = {
   logs: Array<Record<string, unknown>>
   files: Record<string, string>
   ran: string[][]
+  stops: number
 }
 
 const DIRS = new Set(['/', '/repo', '/repo/src', '/home', '/home/u', '/home/u/.claude', '/home/u/.ohmyjev',
@@ -39,15 +40,21 @@ export const flush = async (): Promise<void> => {
 export function harness(
   on: On,
   answer: (questions: Record<string, unknown>) => Answers | 'hang',
-  opts: { status?: number; messages?: SessionMessage[]; env?: Record<string, string>; writeHangs?: boolean } = {},
+  opts: { status?: number; messages?: SessionMessage[] | 'throw'; env?: Record<string, string>; writeHangs?: boolean } = {},
 ): Fake {
-  const fake: Fake = { requests: [], logs: [], files: {}, ran: [] }
+  const fake: Fake = { requests: [], logs: [], files: {}, ran: [], stops: 0 }
   mock.env(on, opts.env ?? { HOME: '/home/u', TMPDIR: '/tmp', TYPESAFE_API_KEY: 'ts-test' })
   on('session.id', () => ({ value: 'test-session' }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('session.root', () => ({ value: '/repo' }))
-  on('classic.Stop', () => ({}))
-  on('session.messages', () => ({ value: opts.messages ?? [] }))
+  on('classic.Stop', () => {
+    fake.stops++ // the user's own Stop hooks, beneath the plugin
+    return {}
+  })
+  on('session.messages', () => {
+    if (opts.messages === 'throw') throw new Error('messages unavailable')
+    return { value: opts.messages ?? [] }
+  })
   on('fs.stat', ($, e) => {
     if (e.path === DANGLING) return { value: { kind: 'other' as const, size: 0, mtimeMs: 0, isLink: true } }
     const r = resolveFake(e.path)
