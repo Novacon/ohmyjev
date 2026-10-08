@@ -116,6 +116,12 @@
       "description": "Skip when the reply asks the user something at or above this (0-1)",
       "default": 0.5
     },
+    "askJev": {
+      "type": "boolean",
+      "title": "ask_jev tool",
+      "description": "Give the model an ask_jev tool for quick judgments about repo files or text without reading them into context",
+      "default": true
+    },
     "autoCompact": {
       "type": "boolean",
       "title": "Auto-compact",

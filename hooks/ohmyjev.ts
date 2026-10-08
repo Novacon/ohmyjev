@@ -7,7 +7,7 @@ import { ENDPOINTS, JevError, parseReply, pickKey } from './jev.ts'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, isUnder, judgeStop, normalize, rawAbsolute,
-  decideRoute, keepInstructions, modelOf, readConfig, routeStep, sanitizeSid, screen, splitList, withPolicies, withPolicyQ,
+  buildQuestion, decideRoute, keepInstructions, statusText, summarize, modelOf, readConfig, routeStep, sanitizeSid, screen, splitList, withPolicies, withPolicyQ,
   type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -17,6 +17,7 @@ type Ctx = { p: Paths; s: SessionState }
 
 const WRITE_TOOLS = ['Write', 'Edit', 'NotebookEdit']
 const HOOKED = ['Bash', 'WebFetch', 'Read', 'Write', 'Edit', 'NotebookEdit', /^mcp__/] as const
+const ASK = 'mcp__ohmyjev__ask_jev'
 const DOWN_MS = 5 * 60_000
 const CLIP = 16000
 
@@ -177,12 +178,16 @@ async function place($: $, p: string): Promise<string | null> {
   return cur || '/'
 }
 
-/** Allowed only when the OS's reading (raw spelling) and a normalizing tool's reading (lexical) both land in a root. */
-async function pathAllowed($: $, path: string, cwd: string): Promise<boolean> {
+/**
+ * Allowed only when the OS's reading (raw spelling) and a normalizing tool's reading (lexical) both land in a root:
+ * the repo, plus allowPaths for writes.
+ */
+async function pathAllowed($: $, path: string, cwd: string, withAllowPaths = true): Promise<boolean> {
   const home = (await $.env.get('HOME')) ?? ''
   const tmpdir = await $.env.get('TMPDIR')
   const roots: string[] = []
-  for (const r of [await $.session.root(), ...splitList(c.allowPaths).map(r => expandRoot(r, home, tmpdir))]) {
+  const extra = withAllowPaths ? splitList(c.allowPaths).map(r => expandRoot(r, home, tmpdir)) : []
+  for (const r of [await $.session.root(), ...extra]) {
     const placed = r ? await place($, r) : null
     if (placed) roots.push(placed)
   }
@@ -253,6 +258,62 @@ async function screenResult($: $, e: { tool: string }, r: ToolCallResult): Promi
   return s.flagged ? { ...r, context: [...(r.context ?? []), s.note] } : r
 }
 
+// --- ask_jev: a judgment about repo files or text, without reading them into the model's context ---
+
+const ASK_DESCRIPTION =
+  'Ask Jev, a fast (~300 ms) and nearly free decision model, one question about repo files or text: yes/no (noul), ' +
+  'multiple choice (choice), or a position on levels (score). Use it for a judgment ABOUT content without reading it ' +
+  'into your context: is this file relevant, does this log show the failure, which of these is riskiest. Read the file ' +
+  'yourself when you need to edit or quote it. Values under ~0.7 mean Jev is unsure.'
+const ASK_SCHEMA = {
+  type: 'object',
+  properties: {
+    question: { type: 'string', description: 'The question, about `files` and/or `state`' },
+    type: { type: 'string', enum: ['noul', 'choice', 'score'], description: 'noul = probability of yes; choice = one of options; score = a position on options as levels, low to high' },
+    options: { type: 'array', items: { type: 'string' }, description: 'choice labels, or 2-10 score levels from low to high' },
+    files: { type: 'array', items: { type: 'string' }, description: 'Repo file paths whose contents Jev reads (not you)' },
+    state: { type: 'string', description: 'Any other text Jev should judge' },
+  },
+  required: ['question', 'type'],
+}
+const ASK_FILE = 8000
+const ASK_TOTAL = 80000
+
+async function answerAsk($: $, e: Record<string, unknown>): Promise<ToolCallResult> {
+  const reply = (v: unknown): ToolCallResult => ({ result: JSON.stringify(v) })
+  const q = buildQuestion(e)
+  if (typeof q === 'string') return reply({ error: q })
+  const cwd = await $.session.cwd()
+  const home = (await $.env.get('HOME')) ?? ''
+  const files: Record<string, string> = {}
+  let budget = ASK_TOTAL
+  for (const f of (Array.isArray(e.files) ? e.files : []).filter((f): f is string => typeof f === 'string').slice(0, 255)) {
+    if (!(await pathAllowed($, f, cwd, false))) files[f] = '[outside the repo: not sent]'
+    else {
+      const text = await $.fs.read(absolute(f, cwd, home)).catch(() => undefined)
+      files[f] = typeof text === 'string' ? clip(text, Math.min(ASK_FILE, budget)) : '[unreadable]'
+    }
+    budget = Math.max(0, budget - files[f]!.length)
+  }
+  const state = { ...(Object.keys(files).length ? { files } : {}), ...(typeof e.state === 'string' ? { text: clip(e.state, 20000) } : {}) }
+  const d = await decide($, 'ask_jev', ASK, state, { answer: q })
+  if (!d) return reply({ error: 'jev unavailable: answer from your own reading' })
+  record($, d, null, 'asked')
+  return reply(d.answers.answer)
+}
+
+/** /jev: this session's status and log summary, and where the key comes from (never the key). */
+async function jevReport($: $): Promise<string> {
+  const x = await session($)
+  const log = await $.fs.read(x.p.log).catch(() => '')
+  const k = pickKey(c.apiKey, c.jevModel, await $.env.get('TYPESAFE_API_KEY'), await $.env.get('OPENROUTER_API_KEY'))
+  return [
+    statusText(x.s, Date.now()),
+    summarize(typeof log === 'string' ? log : ''),
+    `key: ${k ? `${k.source} · ${k.provider} · ${k.model}` : 'none (set TYPESAFE_API_KEY or the apiKey setting)'}`,
+  ].join('\n')
+}
+
 // --- router: classify once per turn, then steer effort (main loop) and the subagent model ---
 
 async function classify($: $, text: string): Promise<void> {
@@ -296,7 +357,16 @@ export const register: Register = (on, options) => {
     return next({ ...e, model: modelOf(route.tier, c) })
   }).catch(($, e, next) => next(e))
 
+  on('session.start', async ($, e, next) => {
+    if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
+    await $.command.register({ name: 'jev', description: "ohmyjev: this session's Jev calls, denies, cost and key source" }).catch(() => undefined)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('command.run', { command: 'jev' }, async $ => ({ text: await jevReport($) })).catch(($, e, next) => next(e))
+
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
+    if (e.tool === ASK) return answerAsk($, e as Record<string, unknown>)
     const denied = await gate($, e)
     if (denied) return { deny: denied }
     return screenResult($, e, await next(e))

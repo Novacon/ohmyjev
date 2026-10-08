@@ -23,6 +23,7 @@ export const DEFAULTS = {
   doneVerifiedMax: 0.3,
   doneAsksUserMax: 0.5,
   exfil: 0.7,
+  askJev: true,
   autoCompact: true,
   compactSwitched: 0.8,
   compactBoundary: 0.6,
@@ -357,4 +358,41 @@ export type LogEntry = {
   ms?: number
   inputTokens?: number
   costUsd?: number
+}
+
+// --- ask_jev and /jev ---
+
+/** The model's ask_jev input as one Jev question, or the error text to hand back. */
+export function buildQuestion(i: { question?: unknown; type?: unknown; options?: unknown }): Question | string {
+  const q = typeof i.question === 'string' ? i.question.trim() : ''
+  if (!q) return 'question is required'
+  const opts = Array.isArray(i.options) ? i.options.filter((o): o is string => typeof o === 'string' && o.trim() !== '') : []
+  if (i.type === 'noul') return noul(q)
+  if (i.type === 'choice') {
+    if (!opts.length) return 'choice needs options'
+    return choice(q, { ...Object.fromEntries(opts.map(o => [o, o])), other: 'None of the listed options fits' })
+  }
+  if (i.type === 'score') return opts.length >= 2 && opts.length <= 10 ? score(q, opts) : 'score needs 2 to 10 levels, low to high'
+  return 'type must be noul, choice or score'
+}
+
+/** /jev's body from a session log: calls, errors, cost, p50, denies per tool, the last 5 denies. Torn lines are skipped. */
+export function summarize(log: string): string {
+  const rows: LogEntry[] = []
+  for (const line of log.split('\n')) {
+    try {
+      if (line.trim()) rows.push(JSON.parse(line) as LogEntry)
+    } catch {}
+  }
+  const calls = rows.filter(r => r.answers)
+  const ms = calls.map(r => r.ms ?? 0).sort((a, b) => a - b)
+  const cost = calls.reduce((n, r) => n + (r.costUsd ?? 0), 0)
+  const denies = rows.filter(r => r.verdict === 'deny' || r.verdict === 'block')
+  const per = new Map<string, number>()
+  for (const r of denies) per.set(r.tool || r.event, (per.get(r.tool || r.event) ?? 0) + 1)
+  return [
+    `calls ${calls.length} · errors ${rows.filter(r => r.error).length} · cost $${cost.toFixed(6)} · p50 ${ms[Math.floor((ms.length - 1) / 2)] ?? 0}ms`,
+    `denies: ${[...per].map(([t, n]) => `${t} ${n}`).join(', ') || 'none'}`,
+    ...denies.slice(-5).map(r => `  ${r.tool || r.event}: ${r.reason ?? ''}`),
+  ].join('\n')
 }

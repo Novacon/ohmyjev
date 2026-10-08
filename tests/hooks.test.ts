@@ -270,3 +270,39 @@ test('the engine\'s own auto compaction keeps the live request', async ($, on) =
   expect(fake.compacts[0]).toContain('be brief')
   expect(fake.compacts[0]).toContain('now write the release notes')
 })
+
+const ASK = 'mcp__ohmyjev__ask_jev'
+
+test('ask_jev judges repo files without reading them into context; nothing outside the repo is sent', async ($, on) => {
+  const fake = harness(on, () => ({ answer: { type: 'choice', choice: 'relevant', confidence: 0.8 } }))
+  fake.files['/repo/src/a.ts'] = 'export const login = () => {}'
+  fake.files['/etc/secret'] = 'TOP SECRET'
+  const r = await $.tool.call({ tool: ASK, question: 'Is this about auth?', type: 'choice', options: ['relevant', 'irrelevant'], files: ['src/a.ts', '/etc/secret'] })
+  expect(JSON.parse(String(r.result))).toEqual({ type: 'choice', choice: 'relevant', confidence: 0.8 })
+  const body = fake.requests[0]!.body
+  expect((body.state.files as Record<string, string>)['src/a.ts']).toBe('export const login = () => {}')
+  expect(JSON.stringify(body)).not.toContain('TOP SECRET')
+  expect(Object.keys(fake.requests[0]!.body.questions)).toEqual(['answer'])
+})
+
+test('ask_jev: bad input and Jev down come back as error JSON (Review Focus v2 #3)', async ($, on) => {
+  const fake = harness(on, () => ({}), { status: 500 })
+  const bad = await $.tool.call({ tool: ASK, question: 'q', type: 'nope' })
+  expect(JSON.parse(String(bad.result))).toEqual({ error: 'type must be noul, choice or score' })
+  expect(fake.requests.length).toBe(0)
+  const down = await $.tool.call({ tool: ASK, question: 'q', type: 'noul' })
+  expect(JSON.parse(String(down.result)).error).toContain('jev unavailable')
+})
+
+test('/jev shows the session and the key source, never the key', async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9))
+  tool(on)
+  await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })
+  await flush()
+  fake.files['/home/u/.ohmyjev/log/test-session.jsonl'] = fake.logs.map(l => '\n' + JSON.stringify(l)).join('\n')
+  const r = await $.command.run({ command: 'jev', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
+  expect(r.text).toContain('jev ✓1 ⛔1')
+  expect(r.text).toContain('Bash: irreversible (0.95)')
+  expect(r.text).toContain('key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0')
+  expect(r.text).not.toContain('ts-test')
+})

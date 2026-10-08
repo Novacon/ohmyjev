@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
   rawAbsolute, sanitizeSid, screen, statusText, type Answers,
-  BASH_Q, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
+  BASH_Q, buildQuestion, summarize, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
 const bash = (effect: string, confidence: number, destructive: number): Answers => ({
@@ -100,4 +100,28 @@ test('router: up needs 0.3, down needs 0.6; risky forces deep and at least high'
   expect(routeStep(decideRoute(route('deep', 0.9, 2, 0.1), main), step, main)).toEqual({ patch: { model: 'claude-opus-5-5' }, label: '↑opus/medium' })
   expect(routeStep(decideRoute(route('deep', 0.9, 2, 0.9), c), { model: 'x', effort: 7 }, c).patch).toEqual({}) // numeric effort untouched
   expect(tierOf('some-new-model', c)).toBe('balanced')
+})
+
+test('ask_jev questions: types, options, errors', () => {
+  expect(buildQuestion({ question: 'q', type: 'noul' })).toEqual({ type: 'noul', instructions: 'q' })
+  expect(buildQuestion({ question: 'q', type: 'choice', options: ['a', 'b'] })).toMatchObject({ criteria: { a: 'a', b: 'b', other: expect.any(String) } })
+  expect(buildQuestion({ question: 'q', type: 'score', options: ['lo', 'hi'] })).toEqual({ type: 'score', instructions: 'q', criteria: ['lo', 'hi'] })
+  expect(buildQuestion({ question: 'q', type: 'score', options: ['lo'] })).toBe('score needs 2 to 10 levels, low to high')
+  expect(buildQuestion({ question: 'q', type: 'choice' })).toBe('choice needs options')
+  expect(buildQuestion({ question: '', type: 'noul' })).toBe('question is required')
+  expect(buildQuestion({ question: 'q', type: 'nope' })).toBe('type must be noul, choice or score')
+})
+
+test('summarize a session log for /jev', () => {
+  const log = [
+    '',
+    JSON.stringify({ ts: 0, event: 'tool.call', tool: 'Bash', verdict: 'deny', reason: 'irreversible (0.95)', answers: {}, ms: 300, costUsd: 0.00001 }),
+    '{"torn',
+    JSON.stringify({ ts: 0, event: 'tool.call', tool: 'Bash', verdict: null, answers: {}, ms: 100, costUsd: 0.00001 }),
+    JSON.stringify({ ts: 0, event: 'tool.call', tool: 'Write', error: 'typesafe: HTTP 500' }),
+  ].join('\n')
+  const out = summarize(log)
+  expect(out).toContain('calls 2 · errors 1 · cost $0.000020 · p50 100ms')
+  expect(out).toContain('denies: Bash 1')
+  expect(out).toContain('Bash: irreversible (0.95)')
 })
