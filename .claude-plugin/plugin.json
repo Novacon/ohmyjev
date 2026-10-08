@@ -1,0 +1,108 @@
+{
+  "name": "ohmyjev",
+  "version": "0.1.0",
+  "description": "Jev for Claude Code: Bash and Write gates, an injection screen, and a done-check, decided by TypeSafe's Jev.",
+  "author": {
+    "name": "lordknows13"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mod",
+    "function-hooks",
+    "jev",
+    "guardrails"
+  ],
+  "userConfig": {
+    "apiKey": {
+      "type": "string",
+      "title": "TypeSafe API key",
+      "description": "Empty uses $TYPESAFE_API_KEY, then $OPENROUTER_API_KEY",
+      "default": "",
+      "sensitive": true
+    },
+    "jevModel": {
+      "type": "string",
+      "title": "Jev model (TypeSafe)",
+      "description": "Model id sent to the TypeSafe endpoint",
+      "default": "jev-1.13.0"
+    },
+    "bashGate": {
+      "type": "boolean",
+      "title": "Bash gate",
+      "description": "Deny irreversible or destructive commands",
+      "default": true
+    },
+    "writeGate": {
+      "type": "boolean",
+      "title": "Write gate",
+      "description": "Deny writes outside the repo/allowPaths and writes holding credentials",
+      "default": true
+    },
+    "injectionScreen": {
+      "type": "boolean",
+      "title": "Injection screen",
+      "description": "Warn the model when Bash, WebFetch or MCP output carries instructions aimed at it",
+      "default": true
+    },
+    "doneCheck": {
+      "type": "boolean",
+      "title": "Done-check",
+      "description": "Push back once when the agent claims done without verifying",
+      "default": true
+    },
+    "bashIrreversible": {
+      "type": "number",
+      "title": "Bash: irreversible confidence to deny",
+      "description": "Deny when Jev rates the command irreversible at least this confident (0-1)",
+      "default": 0.6
+    },
+    "bashDestructive": {
+      "type": "number",
+      "title": "Bash: destructive-intent to deny",
+      "description": "Deny when destructive intent is at least this probable (0-1)",
+      "default": 0.7
+    },
+    "writeSecret": {
+      "type": "number",
+      "title": "Write: credential probability to deny",
+      "description": "Deny when the content holds a credential at least this probable (0-1)",
+      "default": 0.7
+    },
+    "writeSecretsKind": {
+      "type": "number",
+      "title": "Write: secrets-file confidence to deny",
+      "description": "Deny when the file is a secrets file at least this confident (0-1)",
+      "default": 0.8
+    },
+    "injection": {
+      "type": "number",
+      "title": "Injection probability to flag",
+      "description": "Flag tool output as an injection at this probability (0-1)",
+      "default": 0.7
+    },
+    "doneClaimed": {
+      "type": "number",
+      "title": "Done-check: claimed-done at least",
+      "description": "Check only when Jev says done was claimed at least this probable (0-1)",
+      "default": 0.7
+    },
+    "doneVerifiedMax": {
+      "type": "number",
+      "title": "Done-check: verified below",
+      "description": "Push back when verified is below this (0-1)",
+      "default": 0.3
+    },
+    "doneAsksUserMax": {
+      "type": "number",
+      "title": "Done-check: asks-user below",
+      "description": "Skip when the reply asks the user something at or above this (0-1)",
+      "default": 0.5
+    },
+    "allowPaths": {
+      "type": "string",
+      "title": "Allowed write paths outside the repo",
+      "description": "Separated by ; (~ and $TMPDIR expand)",
+      "default": "~/.claude;$TMPDIR;/tmp"
+    }
+  }
+}
