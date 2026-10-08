@@ -24,7 +24,8 @@ deny rules.
 ## Install
 
 ```
-/plugin install ohmyjev --marketplace lordknows13/ohmyjev
+/plugin marketplace add Novacon/ohmyjev
+/plugin install ohmyjev@ohmyjev
 ```
 
 Enter a TypeSafe key on the settings screen (it's kept in secure storage), or export `TYPESAFE_API_KEY` or
