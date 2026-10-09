@@ -734,7 +734,7 @@ addEventListener('scroll', queueIntro, { passive: true });
 addEventListener('resize', () => { measure(); queueIntro(); }, { passive: true });
 document.fonts?.ready.then(() => { measure(); intro(); });
 
-// slide state
+// slide state. Neither may depend on how much of a slide fits on screen: on a phone a slide runs to several screens.
 let activeSlide = 0;
 function setSlide(i) {
   activeSlide = i;
@@ -743,14 +743,24 @@ function setSlide(i) {
   $('slide-progress').style.width = (i + 1) / slides.length * 100 + '%';
   railLinks.forEach((a, j) => j === i ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
 }
-const io = new IntersectionObserver(entries => entries.forEach(e => {
+// a slide's content fades in once its top is 15% into the screen
+const reveal = new IntersectionObserver(entries => entries.forEach(e => {
   if (!e.isIntersecting) return;
   e.target.classList.add('visible');
-  setSlide(slides.indexOf(e.target));
-}), { threshold: [.35] });
-slides.forEach(s => io.observe(s));
+  reveal.unobserve(e.target);
+}), { rootMargin: '0px 0px -15% 0px' });
+slides.forEach(s => reveal.observe(s));
 slides[0].classList.add('visible');
+// the current slide is the one under the middle of the screen
+let trackFrame = 0;
+function trackSlide() {
+  trackFrame = 0;
+  const i = Math.max(0, slides.findLastIndex(s => s.getBoundingClientRect().top <= innerHeight / 2));
+  if (i !== activeSlide) setSlide(i);
+}
+addEventListener('scroll', () => { trackFrame ||= requestAnimationFrame(trackSlide); }, { passive: true });
 setSlide(0);
+trackSlide();
 
 // ambient field: drifting grid, grain, slow particles, a glow that leans toward the pointer
 const cv = $('ambient'), cx = cv.getContext('2d');
