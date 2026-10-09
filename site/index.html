@@ -137,7 +137,8 @@ code { font-family: var(--body); color: var(--paper); }
 
 /* content fades out under the fixed header and the bottom chrome */
 body::before, body::after { content: ""; position: fixed; left: 0; right: 0; z-index: 14; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
-body::before { top: 0; height: calc(var(--block) + 52px); background: linear-gradient(var(--ground) 55%, rgba(16, 19, 21, 0)); }
+/* solid down past the docked wordmark (and the notch, which the header also clears), then a short fade */
+body::before { top: 0; height: calc(env(safe-area-inset-top, 0px) + var(--block) + 56px); background: linear-gradient(var(--ground) calc(100% - 22px), rgba(16, 19, 21, 0)); }
 body::after { bottom: 0; height: calc(var(--block) + 52px); background: linear-gradient(rgba(16, 19, 21, 0), var(--ground) 55%); }
 .passed::before, .passed::after { opacity: 1; }
 
