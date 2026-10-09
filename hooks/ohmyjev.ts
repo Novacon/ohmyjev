@@ -341,6 +341,13 @@ async function jevReport($: $): Promise<string> {
   ].join('\n')
 }
 
+/** /jev settings: every setting's current value, the key only as set or not. */
+function settingsReport(): string {
+  const rows = Object.entries(c).map(([k, v]) =>
+    k === 'apiKey' ? `apiKey: ${v ? 'set (hidden)' : 'not set'}` : `${k}: ${v === '' ? '(empty)' : String(v)}`)
+  return [...rows, '', 'Edit with /plugin configure ohmyjev@ohmyjev, then /reload-plugins.'].join('\n')
+}
+
 // --- router: classify once per turn, then steer effort (main loop) and the subagent model ---
 
 async function classify($: $, text: string): Promise<void> {
@@ -407,7 +414,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
-    await $.command.register({ name: 'jev', description: "ohmyjev: this session's Jev calls, denies, cost and key source" }).catch(() => undefined)
+    await $.command.register({ name: 'jev', description: "ohmyjev: this session's Jev calls, denies, cost and key source", argumentHint: '[settings]' }).catch(() => undefined)
     const k = await keyOf($, c)
     say(
       $,
@@ -420,7 +427,8 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('command.run', { command: 'jev' }, async $ => ({ text: await jevReport($) })).catch(($, e, next) => next(e))
+  on('command.run', { command: 'jev' }, async ($, e) =>
+    ({ text: e.args.trim() === 'settings' ? settingsReport() : await jevReport($) })).catch(($, e, next) => next(e))
 
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
     if (e.tool === ASK) return answerAsk($, e as Record<string, unknown>)

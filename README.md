@@ -219,8 +219,8 @@ if jev:
 
 ## Settings
 
-Every setting except the key is a row in `/config`. Run `claude plugin configure ohmyjev@ohmyjev` to see them all and
-which ones are still unset.
+Run `/jev settings` to see every setting's current value (the key stays hidden). To change them, run
+`/plugin configure ohmyjev@ohmyjev` inside Claude Code, then `/reload-plugins`.
 
 | Setting | Default | What it changes |
 |---|---|---|
@@ -279,13 +279,13 @@ claude plugin uninstall ohmyjev@ohmyjev
 ## Troubleshooting
 
 **The status says `jev ⚠ no key`.** ohmyjev can't find a key. Set `TYPESAFE_API_KEY` in the shell that starts
-Claude Code, or enter the key with `claude plugin configure ohmyjev@ohmyjev`.
+Claude Code, or enter the key with `/plugin configure ohmyjev@ohmyjev`.
 
 **The status says `jev ⚠ down`.** A Jev call failed or took longer than `timeoutMs` (1.5 s) in the last 5 minutes. The
 gates let calls through until Jev answers again. `/jev` shows the error count.
 
 **Something got blocked that shouldn't have.** `/jev` shows the reason and Jev's numbers. Raise that gate's threshold
-in `/config`, or turn the gate off. Local MCP tools sometimes trip the exfil gate, and `exfilGate` is the switch for
+with `/plugin configure ohmyjev@ohmyjev`, or turn the gate off. Local MCP tools sometimes trip the exfil gate, and `exfilGate` is the switch for
 that.
 
 **Nothing seems to happen.** The first transcript line of a session should be `[ohmyjev] ready: …` or `[ohmyjev] no

@@ -422,3 +422,13 @@ test('final review: only general-purpose subagents are routed; an agent with its
   expect((await $.agent.spawn({ ...spawnArgs, subagentType: 'Explore' } as never)).model).toBe('claude-sonnet-5-5')
   expect((await $.agent.spawn(spawnArgs as never)).model).toBe('claude-opus-5-5')
 })
+
+test('/jev settings lists every setting with the key hidden', { options: { apiKey: 'sk-secret-123', policies: 'never touch prod' } }, async ($, on) => {
+  harness(on, () => ({}))
+  const r = await $.command.run({ command: 'jev', args: 'settings', origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
+  expect(r.text).toContain('apiKey: set (hidden)')
+  expect(r.text).toContain('policies: never touch prod')
+  expect(r.text).toContain('bashIrreversible: 0.6')
+  expect(r.text).toContain('/plugin configure ohmyjev@ohmyjev')
+  expect(r.text).not.toContain('sk-secret-123')
+})
