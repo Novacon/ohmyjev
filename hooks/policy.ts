@@ -34,11 +34,15 @@ export const DEFAULTS = {
   routeUpgrade: 0.3,
   routeDowngrade: 0.6,
   routeRisky: 0.7,
+  routeWithoutKey: true,
   fastModel: 'claude-haiku-5-5',
   balancedModel: 'claude-sonnet-5-5',
   deepModel: 'claude-opus-5-5',
   allowPaths: '~/.claude;$TMPDIR;/tmp',
   policies: '',
+  timeoutMs: 1500,
+  logDecisions: true,
+  statusLine: true,
 }
 
 export type Config = typeof DEFAULTS
@@ -123,12 +127,14 @@ export const withPolicies = <T extends object>(state: T, c: Config): T | (T & { 
   const policies = splitList(c.policies)
   return policies.length ? { ...state, policies } : state
 }
+/** The tier rubric: Jev's choice criteria, and the labels the built-in classifier picks from. */
+const TIER_CRITERIA: Record<Tier, string> = {
+  fast: 'Mechanical or local: a lookup, rename, formatting, or a single obvious change',
+  balanced: 'Ordinary engineering: a feature, fix, or refactor with a clear plan',
+  deep: 'Hard or high-stakes: architecture, subtle bugs, security, concurrency, data migrations, unclear requirements',
+}
 export const ROUTE_Q: Questions = {
-  tier: choice('What kind of work does `request` ask for?', {
-    fast: 'Mechanical or local: a lookup, rename, formatting, or a single obvious change',
-    balanced: 'Ordinary engineering: a feature, fix, or refactor with a clear plan',
-    deep: 'Hard or high-stakes: architecture, subtle bugs, security, concurrency, data migrations, unclear requirements',
-  }),
+  tier: choice('What kind of work does `request` ask for?', TIER_CRITERIA),
   effort: score('How much step-by-step reasoning does `request` need?', [
     'None: answer or act directly',
     'A little: a short check before acting',
@@ -241,13 +247,14 @@ export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type Effort = (typeof EFFORTS)[number]
 export const TIERS = ['fast', 'balanced', 'deep'] as const
 export type Tier = (typeof TIERS)[number]
-export type Route = { tier: Tier; tierConf: number; effort: Effort; effortConf: number }
+/** A confidence of null is unmeasured (the built-in classifier): it may move a request up, never down. */
+export type Route = { tier: Tier; tierConf: number | null; effort: Effort; effortConf: number | null; source: 'jev' | 'builtin' }
 
 export function decideRoute(a: Answers, c: Config): Route {
   const t = ch(a, 'tier')
   const s = a.effort as Score
   const level = Math.min(EFFORTS.length - 1, Math.max(0, Math.round(s.score)))
-  const route: Route = { tier: t.choice as Tier, tierConf: t.confidence, effort: EFFORTS[level] ?? 'medium', effortConf: s.confidence ?? 0 }
+  const route: Route = { tier: t.choice as Tier, tierConf: t.confidence, effort: EFFORTS[level] ?? 'medium', effortConf: s.confidence ?? 0, source: 'jev' }
   if (nv(a, 'risky') >= c.routeRisky) {
     route.tier = 'deep'
     route.tierConf = 1
@@ -259,12 +266,26 @@ export function decideRoute(a: Answers, c: Config): Route {
   return route
 }
 
-/** The target when the move clears its bar (up: routeUpgrade, down: routeDowngrade), else undefined. */
-function pick<T extends string>(order: readonly T[], current: T, target: T, conf: number, c: Config): T | undefined {
+/**
+ * The target when the move clears its bar (up: routeUpgrade, down: routeDowngrade), else undefined. An unmeasured
+ * confidence only moves up: spending less on a hunch is the bad trade.
+ */
+function pick<T extends string>(order: readonly T[], current: T, target: T, conf: number | null, c: Config): T | undefined {
   const d = order.indexOf(target) - order.indexOf(current)
+  if (conf === null) return d > 0 ? target : undefined
   if (d > 0 && conf >= c.routeUpgrade) return target
   if (d < 0 && conf >= c.routeDowngrade) return target
   return undefined
+}
+
+/** The tier rubric as labels for Claude Code's built-in classifier, which answers with one of them verbatim. */
+export const TIER_LABELS: readonly string[] = TIERS.map(t => TIER_CRITERIA[t])
+const TIER_EFFORT: Record<Tier, Effort> = { fast: 'low', balanced: 'medium', deep: 'high' }
+
+/** The built-in classifier's label as a route with no confidence; undefined for no answer or a label not ours. */
+export function builtinRoute(label: string | undefined): Route | undefined {
+  const tier = TIERS[TIER_LABELS.indexOf(label ?? '')]
+  return tier && { tier, tierConf: null, effort: TIER_EFFORT[tier], effortConf: null, source: 'builtin' }
 }
 
 export function tierOf(model: string, c: Config): Tier {
@@ -299,6 +320,27 @@ export function routeStep(route: Route, step: { model: string; effort?: string |
   }
   if (dir === 0) return { patch, label: '' }
   return { patch, label: `${dir > 0 ? '↑' : '↓'}${shortModel(patch.model ?? step.model)}/${patch.effort ?? cur}` }
+}
+
+/** The transcript line for Jev's route answer, before any policy: each answer with its confidence, and the latency. */
+export function jevRouteLine(a: Answers, ms: number | undefined): string {
+  const t = ch(a, 'tier')
+  const e = a.effort
+  const effort = e?.type === 'score' ? `${e.score.toFixed(1)}${e.confidence === undefined ? '' : ` (${f2(e.confidence)})`}` : '?'
+  return `jev: tier ${t.choice} (${f2(t.confidence)}) · effort ${effort} · risky ${f2(nv(a, 'risky'))}${ms === undefined ? '' : ` · ${ms}ms`}`
+}
+
+/** What the policy did with the route on the main loop: the move, or what it wanted and why it held back; '' for nothing. */
+export function stepLine(route: Route, step: { model: string; effort?: string | number }, label: string, c: Config): string {
+  if (label) return `main loop ${label}`
+  const cur = typeof step.effort === 'string' && (EFFORTS as readonly string[]).includes(step.effort) ? step.effort : undefined
+  const wantEffort = c.routeEffort && cur !== undefined && cur !== route.effort
+  const wantModel = c.routeMainModel && tierOf(step.model, c) !== route.tier
+  if (!wantEffort && !wantModel) return ''
+  const conf = wantEffort ? route.effortConf : route.tierConf
+  const why = conf === null ? 'no confidence, so up only' : `confidence ${f2(conf)}`
+  const want = `${shortModel(wantModel ? modelOf(route.tier, c) : step.model)}/${wantEffort ? route.effort : cur ?? step.effort}`
+  return `main loop kept ${shortModel(step.model)}/${cur ?? step.effort}, wanted ${want} (${why})`
 }
 
 // --- paths (symlinks are resolved in ohmyjev.ts through $.fs.stat) ---

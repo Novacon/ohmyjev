@@ -25,6 +25,7 @@
   <a href="#install">Install</a> ·
   <a href="#using-it">Using it</a> ·
   <a href="#settings">Settings</a> ·
+  <a href="#privacy">Privacy</a> ·
   <a href="#troubleshooting">Troubleshooting</a>
 </p>
 
@@ -60,7 +61,7 @@ If `/jev` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Policies** | Every gate also checks the call against your own rules in the `policies` setting. |
 | **Injection screen** | When output from Bash, WebFetch, an MCP tool, or a Read outside the repo has instructions aimed at the model, it adds a note telling the model to treat that output as data. |
 | **Done-check** | If the agent says it's done but nothing shows it ran a check, it blocks the stop once and tells the agent to verify. |
-| **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. |
+| **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
 | **`/jev`** | Shows this session's Jev calls, errors, cost, median latency and denies, plus where the key comes from. It never prints the key itself. |
@@ -80,7 +81,7 @@ flowchart LR
 ```
 
 Anything ohmyjev doesn't deny just goes on to Claude Code's normal permission flow. That covers middling answers, Jev
-being down or slower than 1.5 s, a missing key, and any error inside ohmyjev. It never stops to ask you to approve
+being down or slower than `timeoutMs` (1.5 s), a missing key, and any error inside ohmyjev. It never stops to ask you to approve
 anything, so it works fine with agents running in bypass mode. Jev can be wrong though, so keep your deny rules in
 `settings.json`.
 
@@ -127,8 +128,8 @@ Start a session and run `/jev`. The last line tells you where the key came from:
 key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0
 ```
 
-If it says `key: none`, ohmyjev can't see a key. In that case every gate stays open and the statusline shows
-`jev ⚠ no key`.
+If it says `key: none`, ohmyjev can't see a key. In that case every gate stays open, the router falls back to Claude
+Code's built-in classifier (up only), and the status under the prompt shows `jev ⚠ no key`.
 
 ## Using it
 
@@ -181,23 +182,39 @@ The model can call this tool on its own when it wants a quick judgment without r
 Jev reads the files, not the model. ohmyjev only sends files that are inside the repo, up to 8000 characters each and
 80000 in total.
 
-### Statusline
+### In the transcript
 
-If you've got your own statusline script, copy `jev_segment()` from
-[`extras/statusline_segment.py`](extras/statusline_segment.py) into it and add the segment wherever you like:
+Each routing decision shows up as a dim line in the transcript. The model never sees these lines. First what Jev
+said, then what the router did with it:
 
-```python
-jev = jev_segment(data.get("session_id"))   # data = the statusline JSON from stdin
-if jev:
-    parts.append(jev)
+```
+[ohmyjev] ready: Jev via typesafe (jev-1.13.0, key from env TYPESAFE_API_KEY)
+[ohmyjev] jev: tier fast (0.41) · effort 0.4 (0.38) · risky 0.01 · 210ms
+[ohmyjev] main loop kept opus/medium, wanted opus/low (confidence 0.38)
 ```
 
-It reads one small file per session, so it's quick. Here's what it shows:
+The last line is the router declining to act: it wanted to spend less, but 0.38 is under the 0.6 it takes to move
+down. In a `claude -p` or SDK run the same lines arrive as `ui_log` messages and in the debug log. Turn them off with
+`logDecisions`.
+
+### Status line
+
+ohmyjev pins its status under the prompt, so there's nothing to set up:
 
 ```
 jev ✓23 ⛔1 ↑opus/high 🗜2     Jev calls, denies, this turn's route, auto-compactions
 jev ⚠ down                    Jev failed or timed out in the last 5 minutes, so the gates let calls through
 jev ⚠ no key                  no key configured
+```
+
+If you'd rather have it in your own statusline script, copy `jev_segment()` from
+[`extras/statusline_segment.py`](extras/statusline_segment.py) into it and add the segment wherever you like. It
+reads one small file per session, so it's quick. Turn the built-in one off with `statusLine`.
+
+```python
+jev = jev_segment(data.get("session_id"))   # data = the statusline JSON from stdin
+if jev:
+    parts.append(jev)
 ```
 
 ## Settings
@@ -212,12 +229,16 @@ which ones are still unset.
 | `doneCheck` | on | Pushes back on an unverified "done". |
 | `routeEffort`, `routeSubagents` | on | Lets the router change effort and the subagent model. |
 | `routeMainModel` | off | Also switches the main model. It's off because switching models throws away the prompt cache. |
+| `routeWithoutKey` | on | With no key, routes with Claude Code's built-in classifier instead. It has no confidence, so it only routes up. |
 | `autoCompact` | on | Compacts when the task changes. `compactMinPercent` (40) sets how full the context has to be first. |
 | `askJev` | on | Gives the model the `ask_jev` tool. |
 | `policies` | empty | Your own rules, separated by `;`. |
 | `allowPaths` | `~/.claude;$TMPDIR;/tmp` | Places outside the repo where writes are allowed. ohmyjev ignores any entry with `..` in it. |
 | `fastModel`, `balancedModel`, `deepModel` | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | The model id for each router tier. |
 | `jevModel` | `jev-1.13.0` | The Jev model asked through TypeSafe. |
+| `timeoutMs` | 1500 | How long a gate, the screen or the router waits for Jev before letting the call through. |
+| `logDecisions` | on | Shows each routing decision as a line in the transcript. |
+| `statusLine` | on | Pins ohmyjev's status under the prompt. |
 
 Each gate also has its own threshold setting. The defaults are the numbers in [What you get](#what-you-get).
 
@@ -226,6 +247,27 @@ Each gate also has its own threshold setting. The defaults are the numbers in [W
 Every decision gets one line in `~/.ohmyjev/log/<session>.jsonl`, and only you can read it. The log holds the
 verdict, Jev's probabilities, the latency and the cost, never your commands' output. ohmyjev doesn't wait on that
 write, so if one fails you lose that line and nothing else.
+
+## Privacy
+
+With a key set, ohmyjev sends Jev (TypeSafe, or OpenRouter with an OpenRouter key) only what each decision needs, cut to
+a fixed size:
+
+| What asks | What it sends |
+|---|---|
+| Bash gate | The command (up to 16000 characters), the working directory and the tool call's description |
+| Write gate | The file path and the new content (up to 16000 characters). Writes outside the repo and `allowPaths` are denied by code, before anything is sent |
+| Exfil gate | The tool's name and its input (up to 4000 characters) |
+| Injection screen | The tool's output (up to 6000 characters), from Bash, WebFetch, MCP tools and Reads outside the repo |
+| Done-check | The current request (600), up to five earlier requests (200 each), up to 20 of this turn's tool calls with their input (200 each) and outcome, and Claude's last message (1500) |
+| Router | The request (up to 1500 characters) |
+| `ask_jev` | The model's question, any text it passes (up to 20000 characters) and the repo files it names (8000 each, 80000 in total). Files outside the repo are never sent |
+
+When you've set `policies`, every gate sends those too. Turning a feature off stops its calls.
+
+With no key, nothing goes to Jev. The router's built-in classifier sends the request (up to 1500 characters) to
+Claude's own small model, over the same connection Claude Code already uses. Logs and session files stay in
+`~/.ohmyjev`, readable only by you.
 
 ## Update or remove
 
@@ -236,17 +278,19 @@ claude plugin uninstall ohmyjev@ohmyjev
 
 ## Troubleshooting
 
-**The statusline says `jev ⚠ no key`.** ohmyjev can't find a key. Set `TYPESAFE_API_KEY` in the shell that starts
+**The status says `jev ⚠ no key`.** ohmyjev can't find a key. Set `TYPESAFE_API_KEY` in the shell that starts
 Claude Code, or enter the key with `claude plugin configure ohmyjev@ohmyjev`.
 
-**The statusline says `jev ⚠ down`.** A Jev call failed or took longer than 1.5 s in the last 5 minutes. The gates let
-calls through until Jev answers again. `/jev` shows the error count.
+**The status says `jev ⚠ down`.** A Jev call failed or took longer than `timeoutMs` (1.5 s) in the last 5 minutes. The
+gates let calls through until Jev answers again. `/jev` shows the error count.
 
 **Something got blocked that shouldn't have.** `/jev` shows the reason and Jev's numbers. Raise that gate's threshold
 in `/config`, or turn the gate off. Local MCP tools sometimes trip the exfil gate, and `exfilGate` is the switch for
 that.
 
-**Nothing seems to happen.** Run `claude --debug`. If a hook fails, the debug log has a line naming it and the reason.
+**Nothing seems to happen.** The first transcript line of a session should be `[ohmyjev] ready: …` or `[ohmyjev] no
+Jev key: …`. If neither shows, run `claude --debug`: if a hook fails, the debug log has a line naming it and the
+reason.
 
 ## Develop
 

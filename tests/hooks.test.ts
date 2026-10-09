@@ -240,6 +240,89 @@ test('router: Jev down leaves the step as it was; a bare slash command is not cl
   expect(fake.requests.length).toBe(1)
 })
 
+/** Claude Code's built-in classifier beneath the plugin, answering with the label at `pick` of the labels it was given. */
+function builtin(on: On, pick: number) {
+  const asked: string[] = []
+  on('model.classify', ($, e) => {
+    asked.push(e.text)
+    return { value: e.labels[pick] }
+  })
+  return asked
+}
+
+test('no key: the built-in classifier routes up and nothing goes to Jev', async ($, on) => {
+  const fake = harness(on, () => routeAns('fast', 0, 1), { env: { HOME: '/home/u' } })
+  const seen = model(on)
+  const asked = builtin(on, 2) // deep
+  await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
+  await drain($.turn.step(step))
+  expect(seen.effort).toBe('high')
+  expect((await $.agent.spawn(spawnArgs as never)).model).toBe('claude-opus-5-5')
+  expect(asked).toEqual(['redesign the auth flow'])
+  expect(fake.requests.length).toBe(0)
+})
+
+test('no key: a fast label has no confidence, so it never lowers effort', async ($, on) => {
+  harness(on, () => routeAns('fast', 0, 1), { env: { HOME: '/home/u' } })
+  const seen = model(on)
+  builtin(on, 0) // fast
+  await $.turn.start({ text: 'rename a variable', turnId: 't1' })
+  await drain($.turn.step(step)) // medium would go down to low
+  expect(seen.effort).toBe('medium')
+})
+
+test('routeWithoutKey off: no key routes nothing', { options: { routeWithoutKey: false } }, async ($, on) => {
+  harness(on, () => routeAns('fast', 0, 1), { env: { HOME: '/home/u' } })
+  const seen = model(on)
+  const asked = builtin(on, 2)
+  await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
+  await drain($.turn.step(step))
+  expect(seen.effort).toBe('medium')
+  expect(asked.length).toBe(0)
+})
+
+/** The transcript beneath the plugin: every `$.ui.log` line. */
+function transcript(on: On) {
+  const lines: string[] = []
+  on('ui.log', ($, e) => {
+    lines.push(e.text)
+    return { value: undefined }
+  })
+  return lines
+}
+
+test('the router shows its answer and its move in the transcript once per turn, not per step', async ($, on) => {
+  harness(on, () => routeAns('deep', 3, 0.9))
+  model(on)
+  const lines = transcript(on)
+  await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
+  await drain($.turn.step(step))
+  await drain($.turn.step({ ...step, index: 1 }))
+  expect(lines.length).toBe(2)
+  expect(lines.every(l => l.startsWith('[ohmyjev] '))).toBe(true)
+})
+
+test('logDecisions off: the router routes but writes nothing to the transcript', { options: { logDecisions: false } }, async ($, on) => {
+  harness(on, () => routeAns('deep', 3, 0.9))
+  const seen = model(on)
+  const lines = transcript(on)
+  await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
+  await drain($.turn.step(step))
+  expect(seen.effort).toBe('xhigh')
+  expect(lines.length).toBe(0)
+})
+
+test('timeoutMs sets how long a gate waits for Jev', { options: { timeoutMs: 300, injectionScreen: false } }, async ($, on) => {
+  harness(on, () => 'hang')
+  const clock = mock.clock(on)
+  const t = tool(on)
+  const pending = $.tool.call({ tool: 'Bash', command: 'ls' })
+  await clock.settle()
+  await clock.advance(300)
+  expect((await pending).deny).toBe(undefined)
+  expect(t.ran).toBe(1)
+})
+
 const measure = (percent: number) => ({ context: { window: 200000, percent }, rateLimits: [], changed: [] })
 const switched = [
   msg('user', 'fix the login bug'),

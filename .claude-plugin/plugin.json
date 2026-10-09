@@ -182,6 +182,12 @@
       "description": "At this probability a request touching prod, money or credentials goes deep with at least high effort (0-1)",
       "default": 0.7
     },
+    "routeWithoutKey": {
+      "type": "boolean",
+      "title": "Router: built-in classifier without a key",
+      "description": "With no Jev key, route with Claude Code's own small model; it reports no confidence, so it only routes up",
+      "default": true
+    },
     "fastModel": {
       "type": "string",
       "title": "Fast model",
@@ -211,6 +217,24 @@
       "title": "Policies",
       "description": "Your own rules every gate weighs, separated by ; (e.g. never touch prod; no deploys on Friday)",
       "default": ""
+    },
+    "timeoutMs": {
+      "type": "number",
+      "title": "Jev timeout (ms)",
+      "description": "How long a gate, screen or the router waits for Jev before letting the call through",
+      "default": 1500
+    },
+    "logDecisions": {
+      "type": "boolean",
+      "title": "Show decisions in the transcript",
+      "description": "Dim lines (never sent to the model) with each routing decision, its confidence and latency",
+      "default": true
+    },
+    "statusLine": {
+      "type": "boolean",
+      "title": "Status under the prompt",
+      "description": "Pin jev's calls, denies and route under the prompt; no statusline script needed",
+      "default": true
     }
   }
 }

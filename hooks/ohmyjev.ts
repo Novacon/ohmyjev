@@ -3,11 +3,12 @@
  * answers the engine. Every failure passes through; storage is fire-and-forget.
  */
 import type { EngineInterface, Register, SessionMessage, ToolCallResult } from 'claude-code'
-import { ENDPOINTS, JevError, parseReply, pickKey } from './jev.ts'
+import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from './jev.ts'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, isUnder, judgeStop, normalize, rawAbsolute,
-  buildQuestion, decideRoute, keepInstructions, statusText, summarize, modelOf, readConfig, routeStep, sanitizeSid, screen, splitList, withPolicies, withPolicyQ,
+  buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
+  sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS,
   type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -40,9 +41,14 @@ const outcomeOf = (t: { tool: string; result?: unknown; text?: string; isError?:
 
 const TIMEOUT = Symbol('timeout')
 
+/** Config apiKey, then $TYPESAFE_API_KEY, then $OPENROUTER_API_KEY; null when none is set. */
+async function keyOf($: $, c: Config): Promise<Key | null> {
+  return pickKey(c.apiKey, c.jevModel, await $.env.get('TYPESAFE_API_KEY'), await $.env.get('OPENROUTER_API_KEY'))
+}
+
 /** One decision request, raced against a timeout. Throws JevError; the caller passes through on any failure. */
 async function askJev($: $, c: Config, state: unknown, questions: Questions, timeoutMs: number) {
-  const k = pickKey(c.apiKey, c.jevModel, await $.env.get('TYPESAFE_API_KEY'), await $.env.get('OPENROUTER_API_KEY'))
+  const k = await keyOf($, c)
   if (!k) throw new JevError('no key', true)
   const started = Date.now()
   const request = $.http.fetch(ENDPOINTS[k.provider], {
@@ -93,9 +99,30 @@ async function loadSession($: $, p: Paths): Promise<SessionState> {
   }
 }
 
-/** Fire-and-forget: the statusline may lag a write, a decision never waits for one. */
+/** Fire-and-forget: the statusline may lag a write, a decision never waits for one. Also repins the on-screen status. */
 function writeSession($: $, p: Paths, s: SessionState): void {
   void $.fs.write(p.session, JSON.stringify(s)).catch(() => undefined)
+  showStatus($, s)
+}
+
+/** The status line pinned under the prompt, the same text the statusline segment shows. */
+function showStatus($: $, s: SessionState): void {
+  if (!c.statusLine) return
+  try {
+    $.ui.status(statusText(s, Date.now()))
+  } catch {
+    // a surface with no status line: the statusline file still has it
+  }
+}
+
+/** One dim transcript line, never sent to the model; a `-p` or SDK host gets it as `ui_log`, the debug log either way. */
+function say($: $, text: string): void {
+  if (!c.logDecisions) return
+  try {
+    $.ui.log(`[ohmyjev] ${text}`)
+  } catch {
+    // nowhere to draw it: the decision log has the same facts
+  }
 }
 
 /** Fire-and-forget append. Each line starts with `\n`, so a torn earlier line never swallows this one; readers skip blanks. */
@@ -110,6 +137,7 @@ let pushedBackAt = -1 // request count when the done-check last pushed back: onc
 let route: Route | undefined // this turn's classification; undefined routes nothing
 let liveRequest = '' // the latest request the Stop hook saw: what any compaction must keep
 let compactPending = false // a task switch at a boundary, waiting for the context to fill past compactMinPercent
+let saidStepFor = '' // the turn whose main-loop routing line is already in the transcript
 
 async function session($: $): Promise<Ctx> {
   if (!ctx) {
@@ -125,7 +153,7 @@ async function decide($: $, event: string, tool: string, state: unknown, questio
   const x = await session($)
   const e: LogEntry = { ts: Date.now(), session: x.p.sid, event, tool }
   try {
-    const { answers, meta } = await askJev($, c, state, questions, 1500)
+    const { answers, meta } = await askJev($, c, state, questions, c.timeoutMs)
     Object.assign(e, meta, { answers })
     x.s.calls++
     x.s.noKey = false
@@ -305,7 +333,7 @@ async function answerAsk($: $, e: Record<string, unknown>): Promise<ToolCallResu
 async function jevReport($: $): Promise<string> {
   const x = await session($)
   const log = await $.fs.read(x.p.log).catch(() => '')
-  const k = pickKey(c.apiKey, c.jevModel, await $.env.get('TYPESAFE_API_KEY'), await $.env.get('OPENROUTER_API_KEY'))
+  const k = await keyOf($, c)
   return [
     statusText(x.s, Date.now()),
     summarize(typeof log === 'string' ? log : ''),
@@ -319,10 +347,22 @@ async function classify($: $, text: string): Promise<void> {
   if (!text.trim()) return // a continuation: keep this task's route
   route = undefined
   if (!(c.routeEffort || c.routeSubagents || c.routeMainModel) || /^\/\S+\s*$/.test(text.trim())) return
+  if (!(await keyOf($, c))) return classifyBuiltin($, text)
   const d = await decide($, 'turn.start', '', { request: clip(text, 1500) }, ROUTE_Q)
   if (!d) return
   route = decideRoute(d.answers, c)
-  record($, d, null, `${route.tier} (${route.tierConf.toFixed(2)}), ${route.effort} (${route.effortConf.toFixed(2)})`)
+  say($, jevRouteLine(d.answers, d.e.ms))
+  record($, d, null, `${route.tier} (${route.tierConf?.toFixed(2) ?? 'n/d'}), ${route.effort} (${route.effortConf?.toFixed(2) ?? 'n/d'})`)
+}
+
+/** No Jev key: Claude Code's own small model picks the tier. It reports no confidence, so the route only moves up. */
+async function classifyBuiltin($: $, text: string): Promise<void> {
+  if (!c.routeWithoutKey) return
+  route = builtinRoute(await $.model.classify(clip(text, 1500), TIER_LABELS).catch(() => undefined))
+  if (!route) return
+  say($, `built-in classifier (no Jev key): tier ${route.tier}, effort ${route.effort}; no confidence, so it only routes up`)
+  const x = await session($)
+  appendLog($, x.p, { ts: Date.now(), session: x.p.sid, event: 'turn.start', tool: '', verdict: null, reason: `builtin: ${route.tier}, ${route.effort}` })
 }
 
 async function noteRoute($: $, label: string): Promise<void> {
@@ -339,6 +379,7 @@ export const register: Register = (on, options) => {
   route = undefined
   liveRequest = ''
   compactPending = false
+  saidStepFor = ''
 
   on('turn.start', async ($, e, next) => {
     await classify($, e.text)
@@ -348,18 +389,34 @@ export const register: Register = (on, options) => {
   on('turn.step', async function* ($, e, next) {
     if (!route || e.agentId) return yield* next(e)
     const { patch, label } = routeStep(route, e, c)
+    if (saidStepFor !== e.turnId) {
+      saidStepFor = e.turnId
+      const line = stepLine(route, e, label, c)
+      if (line) say($, line)
+    }
     await noteRoute($, label)
     return yield* next({ ...e, ...patch })
   })
 
   on('agent.spawn', ($, e, next) => {
     if (!route || !c.routeSubagents || e.model || e.fork || e.subagentType !== 'general-purpose') return next(e)
-    return next({ ...e, model: modelOf(route.tier, c) })
+    const model = modelOf(route.tier, c)
+    say($, `subagent → ${model} (${route.tier})`)
+    return next({ ...e, model })
   }).catch(($, e, next) => next(e))
 
   on('session.start', async ($, e, next) => {
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
     await $.command.register({ name: 'jev', description: "ohmyjev: this session's Jev calls, denies, cost and key source" }).catch(() => undefined)
+    const k = await keyOf($, c)
+    say(
+      $,
+      k
+        ? `ready: Jev via ${k.provider} (${k.model}, key from ${k.source})`
+        : `no Jev key: gates and screens let every call through${c.routeWithoutKey ? '; routing uses the built-in classifier, up only' : ''}. Set TYPESAFE_API_KEY or the apiKey setting.`,
+    )
+    const x = await session($)
+    showStatus($, k ? x.s : { ...x.s, noKey: true })
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -429,6 +486,7 @@ export const register: Register = (on, options) => {
     route = undefined
     liveRequest = ''
     compactPending = false
+    saidStepFor = ''
     return next(e)
   })
 }

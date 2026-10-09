@@ -331,7 +331,7 @@ td:nth-child(2) { color: var(--warm); }
   .lede { font-size: .9375rem; line-height: 1.45; }
   .feat h3 { font-size: 1.0625rem; }
   .feat svg { width: 20px; height: 20px; }
-  td { padding-top: 3px; padding-bottom: 3px; font-size: .875rem; line-height: 1.3; }
+  td { padding-top: 2px; padding-bottom: 2px; font-size: .875rem; line-height: 1.3; }
   th { padding-top: 4px; padding-bottom: 4px; }
   .code pre, .cmd { font-size: 13.5px; line-height: 1.45; padding-top: 8px; padding-bottom: 8px; }
   :where(.body) p, :where(.body) li { font-size: .9375rem; line-height: 1.4; }
@@ -421,7 +421,7 @@ td:nth-child(2) { color: var(--warm); }
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM9 10h7M9 14h7M9 18h4"/></svg><span class="kind gate">Gate</span></div><h3>Policies</h3><p>Every gate also checks the call against your own plain-English rules.</p><p class="cfg">policies</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"/></svg><span class="kind check">Check</span></div><h3>Injection screen</h3><p>Output from Bash, WebFetch, MCP or an outside Read that talks to the model gets a “treat as data” note.</p><p class="cfg">injectionScreen</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind check">Check</span></div><h3>Done-check</h3><p>Says it's done with no sign of a check? It blocks the stop once and tells the agent to verify.</p><p class="cfg">doneCheck</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind route">Route</span></div><h3>Router</h3><p>One Jev call per request for tier, effort and risk. Sets effort and picks the model for general-purpose subagents.</p><p class="cfg">routeEffort, routeSubagents</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind route">Route</span></div><h3>Router</h3><p>Sets effort and the subagent model from one Jev call per request. No key? Claude Code's own classifier steps in, routing up only.</p><p class="cfg">routeEffort, routeSubagents</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind route">Route</span></div><h3>Auto-compact</h3><p>Task changed and context at least 40% full? It compacts, keeping the new request in full.</p><p class="cfg">autoCompact</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about repo files or text without loading them into its own context.</p><p class="cfg">askJev</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/jev</h3><p>This session's calls, errors, cost, median latency, denies and key source. Never prints the key.</p><p class="cfg">slash command</p></div>
@@ -503,7 +503,7 @@ This block is final. Do not try to work around it with another command, another 
           </div>
           <div class="step">
             <p class="n">STEP 4</p><h4>Check it works</h4>
-            <p>Run <code>/jev</code>. The last line says where the key came from. <code>key: none</code> means every gate stays open.</p>
+            <p>Run <code>/jev</code>. The last line says where the key came from. With <code>key: none</code> every gate stays open and routing falls back to Claude Code's own classifier.</p>
             <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>/jev, last line</span></div><pre>key: env TYPESAFE_API_KEY · <span class="g">typesafe</span> · jev-1.13.0</pre></div>
           </div>
         </div>
@@ -541,10 +541,10 @@ key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</pre></div>
   <span class="k">"files"</span>: ["src/auth.ts", "src/session.ts", "src/routes.ts"] }</pre></div>
           </div>
           <div>
-            <div class="card-head"><h3>Statusline</h3><a class="meta" href="https://github.com/Novacon/ohmyjev/blob/main/extras/statusline_segment.py">copy jev_segment() <span aria-hidden="true">↗</span></a></div>
-            <div class="code grow"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>statusline</span></div><pre><span class="g">jev ✓23</span> <span class="o">⛔1</span> <span class="k">↑opus/high</span> 🗜2   <span class="c">calls, denies, route, compactions</span>
-jev ⚠ down                  <span class="c">Jev failing, gates let calls through</span>
-jev ⚠ no key                <span class="c">no key configured</span></pre></div>
+            <div class="card-head"><h3>Transcript &amp; status</h3><a class="meta" href="https://github.com/Novacon/ohmyjev#status-line">built in, no setup <span aria-hidden="true">↗</span></a></div>
+            <div class="code grow"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>transcript, then the status under the prompt</span></div><pre><span class="c">[ohmyjev]</span> jev: tier fast (0.41) · effort 0.4 (0.38) · risky 0.01 · 210ms
+<span class="c">[ohmyjev]</span> main loop kept opus/medium, wanted opus/low (confidence 0.38)
+<span class="g">jev ✓23</span> <span class="o">⛔1</span> <span class="k">↑opus/high</span> 🗜2</pre></div>
           </div>
           <div>
             <div class="card-head"><h3>Your own rules</h3><span class="meta">policies setting · separated by ;</span></div>
@@ -559,7 +559,7 @@ jev ⚠ no key                <span class="c">no key configured</span></pre></di
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">05 / Settings <span>/config</span></p><h2>tune <em>it</em></h2>
-        <p class="lede">Every setting except the key is a row in <code>/config</code>. Gate thresholds are settings too, defaulting to the numbers in <a href="#features">What you get</a>.</p>
+        <p class="lede">Every setting except the key is a row in <code>/config</code>, gate thresholds included; their defaults are in <a href="#features">What you get</a>.</p>
       </div>
       <div class="body reveal main-last">
         <div class="table">
@@ -570,23 +570,25 @@ jev ⚠ no key                <span class="c">no key configured</span></pre></di
               <tr><td><code>injectionScreen</code>, <code>screenReads</code></td><td class="on">on</td><td>Screens tool output, including Reads from outside the repo.</td></tr>
               <tr><td><code>doneCheck</code></td><td class="on">on</td><td>Pushes back on an unverified “done”.</td></tr>
               <tr><td><code>routeEffort</code>, <code>routeSubagents</code></td><td class="on">on</td><td>Lets the router change effort and the subagent model.</td></tr>
-              <tr><td><code>routeMainModel</code></td><td>off</td><td>Also switches the main model. Off because that throws away the prompt cache.</td></tr>
-              <tr><td><code>autoCompact</code></td><td class="on">on</td><td>Compacts on a task change once the context is <code>compactMinPercent</code> (40) full.</td></tr>
+              <tr><td><code>routeWithoutKey</code></td><td class="on">on</td><td>No key: Claude Code's own classifier routes, up only.</td></tr>
+              <tr><td><code>routeMainModel</code></td><td>off</td><td>Also switches the main model; that drops the prompt cache.</td></tr>
+              <tr><td><code>autoCompact</code></td><td class="on">on</td><td>Compacts after a task switch, past <code>compactMinPercent</code> (40).</td></tr>
               <tr><td><code>askJev</code></td><td class="on">on</td><td>Gives the model the <code>ask_jev</code> tool.</td></tr>
               <tr><td><code>policies</code></td><td>empty</td><td>Your own rules, separated by <code>;</code>.</td></tr>
               <tr><td><code>allowPaths</code></td><td>~/.claude;$TMPDIR;/tmp</td><td>Writable places outside the repo. Entries with <code>..</code> are ignored.</td></tr>
               <tr><td><code>fastModel</code>, <code>balancedModel</code>, <code>deepModel</code></td><td>claude-{haiku,sonnet,opus}-5-5</td><td>The model id for each router tier.</td></tr>
-              <tr><td><code>jevModel</code></td><td>jev-1.13.0</td><td>The Jev model asked through TypeSafe.</td></tr>
+              <tr><td><code>timeoutMs</code></td><td>1500</td><td>How long to wait for Jev before letting the call through.</td></tr>
+              <tr><td><code>logDecisions</code>, <code>statusLine</code></td><td class="on">on</td><td>Decision lines in the transcript; status under the prompt.</td></tr>
             </tbody>
           </table>
         </div>
         <div class="grid g3">
-          <div><h3>Logs</h3><p>One line per decision in <code>~/.ohmyjev/log/&lt;session&gt;.jsonl</code>, readable only by you. Verdicts, probabilities, latency and cost; never command output.</p></div>
-          <div class="copyable"><div class="card-head"><h3>Update or remove</h3><button type="button" class="copy lbl" data-copy>Copy <span aria-hidden="true">→</span></button></div>
+          <div><h3>Privacy</h3><p>Each check sends Jev only what it needs, cut to size; no key, nothing goes. <a href="https://github.com/Novacon/ohmyjev#privacy">What each sends</a>.</p></div>
+          <div class="copyable"><div class="card-head"><h3>Update (then restart) or remove</h3><button type="button" class="copy lbl" data-copy>Copy <span aria-hidden="true">→</span></button></div>
             <pre class="cmd">claude plugin update ohmyjev@ohmyjev
-claude plugin uninstall ohmyjev@ohmyjev</pre><p>Restart Claude Code after an update.</p>
+claude plugin uninstall ohmyjev@ohmyjev</pre>
           </div>
-          <div><h3>Develop</h3><p>The decision logic in <code>hooks/policy.ts</code> is pure and tested with plain tables. Rubrics from <a href="https://github.com/disler/ten-levels-of-jev">disler/ten-levels-of-jev</a>.</p>
+          <div><h3>Develop</h3><p>The decision logic in <code>hooks/policy.ts</code> is pure and table-tested.</p>
             <div class="links lbl">
               <a href="https://github.com/Novacon/ohmyjev">GitHub <span aria-hidden="true">↗</span></a>
               <a href="https://github.com/Novacon/ohmyjev#develop">Dev setup <span aria-hidden="true">↗</span></a>
