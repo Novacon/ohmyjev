@@ -8,13 +8,14 @@
 ```
 
 <p align="center">
-  Guardrails for Claude Code, decided by <a href="https://typesafe.ai">Jev</a>.<br>
+  Guardrails for Claude Code, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.<br>
   One mod that blocks destructive commands, catches prompt injection, pushes back on an unverified "done" and routes effort per turn.
 </p>
 
 <p align="center">
   <img alt="Claude Code 2.1.287+" src="https://img.shields.io/badge/Claude_Code-2.1.287%2B-d97757">
   <img alt="Decided by Jev" src="https://img.shields.io/badge/decided_by-Jev-101315">
+  <img alt="pi and omp" src="https://img.shields.io/badge/also_for-pi_·_omp-86a893">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-798186">
 </p>
 
@@ -23,6 +24,7 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#what-you-get">What you get</a> ·
   <a href="#install">Install</a> ·
+  <a href="#pi-and-omp">pi and omp</a> ·
   <a href="#using-it">Using it</a> ·
   <a href="#settings">Settings</a> ·
   <a href="#privacy">Privacy</a> ·
@@ -130,6 +132,57 @@ key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0
 
 If it says `key: none`, ohmyjev can't see a key. In that case every gate stays open, the router falls back to Claude
 Code's built-in classifier (up only), and the status under the prompt shows `jev ⚠ no key`.
+
+## pi and omp
+
+The same checks run in [pi](https://pi.dev) and [omp](https://github.com/can1357/oh-my-pi) as a native extension.
+They share the decision logic and the key lookup (`TYPESAFE_API_KEY`, then `OPENROUTER_API_KEY`) with the Claude Code
+plugin, and write to the same `~/.ohmyjev` logs, so `/jev` and the statusline segment work the same way.
+
+### omp
+
+```bash
+omp plugin install github:Novacon/ohmyjev
+```
+
+Or from the marketplace this repo already serves: `/marketplace add Novacon/ohmyjev`, then
+`/marketplace install ohmyjev@ohmyjev`. Restart the session after installing. Settings use the names in
+[Settings](#settings):
+
+```bash
+omp plugin config list ohmyjev
+omp plugin config set ohmyjev routeMainModel true
+```
+
+The router's tiers default to omp's own model roles: `@smol`, `@default` and `@slow`.
+
+### pi
+
+```bash
+pi install git:github.com/Novacon/ohmyjev
+```
+
+pi has no settings screen for extensions, so put yours under an `ohmyjev` key in `~/.pi/agent/settings.json`, or in
+`.pi/settings.json` for one project (project values win):
+
+```json
+{ "ohmyjev": { "routeMainModel": true, "fastModel": "anthropic/claude-haiku-5-5" } }
+```
+
+### What differs
+
+| | Claude Code | omp | pi |
+|---|---|---|---|
+| Bash gate | Bash | `bash`, `eval`, and `github` pushes and PRs | `bash`, `powershell` |
+| Write gate | Write, Edit, NotebookEdit | `write`, `edit` (patches and renames included), `ast_edit` | `write`, `edit` |
+| Exfil gate | WebFetch, MCP tools | `read` of a URL, MCP tools | MCP tools (pi has no fetch tool; `curl` goes through the bash gate) |
+| Injection screen | Bash, WebFetch, MCP, Reads outside the repo | `bash`, `github`, URL reads, MCP, reads outside the repo | `bash`, `powershell`, MCP, reads outside the repo |
+| Done-check | ✓ | ✓ | ✓ |
+| Router effort | ✓ | ✓ (left alone while you're on `auto`) | ✓ |
+| Router subagent model | general-purpose subagents | subagents on the default `task` role | none: pi has no subagents |
+| Router without a key | Claude Code's built-in classifier, up only | off: omp has no separate classifier call for extensions | the cheapest model you've set up, up only |
+| Decision lines | in the transcript | notifications | notifications |
+| Status | under the prompt | in the footer | in the footer |
 
 ## Using it
 
@@ -266,8 +319,8 @@ a fixed size:
 When you've set `policies`, every gate sends those too. Turning a feature off stops its calls.
 
 With no key, nothing goes to Jev. The router's built-in classifier sends the request (up to 1500 characters) to
-Claude's own small model, over the same connection Claude Code already uses. Logs and session files stay in
-`~/.ohmyjev`, readable only by you.
+Claude's own small model, over the same connection Claude Code already uses. In pi it goes to the cheapest model you
+have set up, through pi's own provider. Logs and session files stay in `~/.ohmyjev`, readable only by you.
 
 ## Update or remove
 
@@ -295,13 +348,15 @@ reason.
 ## Develop
 
 ```bash
-git clone https://github.com/Novacon/ohmyjev && cd ohmyjev
+git clone https://github.com/Novacon/ohmyjev && cd ohmyjev && bun install
 claude --plugin-dir "$PWD"                  # run your working copy, and it writes the API types to .claude-plugin/types
-claude plugin test . && claude plugin validate . && bunx -p typescript@5.6.3 tsc -p .
+omp -e ./adapters/omp.ts                    # or: pi -e ./adapters/pi.ts
+bun run test && bun run typecheck && claude plugin validate .
 ```
 
 The decision logic lives in `hooks/policy.ts` and is pure, so you can test it with plain tables. `hooks/ohmyjev.ts`
-wires it to Claude Code. The design and plans are in [`docs/superpowers`](docs/superpowers).
+wires it to Claude Code; `adapters/omp.ts` and `adapters/pi.ts` wire it to omp and pi through `adapters/shared.ts`.
+The design and plans are in [`docs/superpowers`](docs/superpowers).
 
 ## Credits
 

@@ -186,7 +186,12 @@ main { position: relative; z-index: 1; }
 .badges span:first-child::before { background: var(--orange); }
 .badges span:nth-child(2)::before { background: var(--green); }
 .qs { margin-top: 26px; }
-.qs-head { display: flex; justify-content: space-between; color: var(--faint); font-size: .75rem; margin-bottom: 8px; }
+.qs-head { display: flex; justify-content: space-between; align-items: flex-end; color: var(--faint); font-size: .75rem; margin-bottom: 8px; }
+.qs-tabs { display: flex; gap: 4px; }
+.qs-tab { padding: 3px 8px 4px; border-bottom: 1px solid transparent; color: var(--faint); transition: color .2s ease, border-color .2s ease; }
+.qs-tab:hover { color: var(--paper); }
+.qs-tab[aria-selected="true"] { color: var(--orange); border-bottom-color: var(--orange); }
+.qs-rows[hidden] { display: none; }
 .qs-rows { border: 1px solid var(--line); background: rgba(16, 19, 21, .78); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .qs-row { display: flex; align-items: stretch; border-top: 1px solid var(--line); transition: background .2s ease; }
 .qs-row:first-child { border-top: 0; }
@@ -393,14 +398,24 @@ td:nth-child(2) { color: var(--warm); }
 <main>
   <section id="top" class="slide landing" data-title="Quick start" aria-label="ohmyjev quick start">
     <div class="quick">
-      <p class="tagline">Guardrails for Claude Code, decided by <a href="https://typesafe.ai">Jev</a>.<span>One mod that blocks destructive commands, catches prompt injection, pushes back on an unverified “done” and routes effort per turn.</span></p>
-      <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>Decided by Jev</span><span>MIT license</span></p>
+      <p class="tagline">Guardrails for Claude Code, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.<span>One mod that blocks destructive commands, catches prompt injection, pushes back on an unverified “done” and routes effort per turn.</span></p>
+      <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>pi · omp</span><span>Decided by Jev</span><span>MIT license</span></p>
       <div class="qs">
-        <div class="qs-head lbl"><span>Quick start</span><span>3 steps</span></div>
-        <div class="qs-rows">
+        <div class="qs-head lbl"><span>Quick start</span><span class="qs-tabs" role="tablist" aria-label="Agent"><button type="button" class="qs-tab" role="tab" data-agent="claude" aria-selected="true">Claude Code</button><button type="button" class="qs-tab" role="tab" data-agent="omp" aria-selected="false">omp</button><button type="button" class="qs-tab" role="tab" data-agent="pi" aria-selected="false">pi</button></span></div>
+        <div class="qs-rows" data-agent="claude">
           <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/plugin install ohmyjev --marketplace Novacon/ohmyjev</code><span class="where lbl">claude code</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/jev</code><span class="where lbl">claude code</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+        </div>
+        <div class="qs-rows" data-agent="omp" hidden>
+          <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>omp plugin install github:Novacon/ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/jev</code><span class="where lbl">omp</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+        </div>
+        <div class="qs-rows" data-agent="pi" hidden>
+          <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>pi install git:github.com/Novacon/ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/jev</code><span class="where lbl">pi</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
         </div>
       </div>
       <p class="hint">If <code>/jev</code> ends with <code>key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</code>, you're set.</p>
@@ -478,7 +493,7 @@ This block is final. Do not try to work around it with another command, another 
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">03 / Install <span>4 steps</span></p><h2><em>install</em> it</h2>
-        <p class="lede">You need a Jev key: a TypeSafe key, or an OpenRouter key if you'd rather go through OpenRouter. Everything else happens inside Claude Code.</p>
+        <p class="lede">You need a Jev key: a TypeSafe key, or an OpenRouter key. These steps are for Claude Code; on pi or omp, pick yours in the <a href="#top">quick start</a>.</p>
       </div>
       <div class="body reveal main-first">
         <div class="grid g4">
@@ -637,6 +652,14 @@ slides.forEach((s, i) => {
 });
 const railLinks = [...rail.children];
 
+// quick start: one set of steps per agent
+const tabs = [...document.querySelectorAll('.qs-tab')];
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(b => b.setAttribute('aria-selected', String(b === t)));
+  document.querySelectorAll('.qs-rows').forEach(r => { r.hidden = r.dataset.agent !== t.dataset.agent; });
+  measure(); intro(); // the steps' height can change, and the wordmark sits above them
+}));
+
 // copy buttons: copy the command or code next to them
 document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
   const src = b.closest('.qs-row, .code, .copyable').querySelector('code, pre');
@@ -679,7 +702,10 @@ function measure() {
   w0 = brand.offsetWidth; h0 = brand.offsetHeight;
   target.style.width = w0 + 'px'; target.style.height = h0 + 'px';
   quickH = quick.offsetHeight;
-  quick.style.top = landing().quickY + 'px';
+  const { quickY } = landing();
+  quick.style.top = quickY + 'px';
+  // .quick is absolute, so on short screens grow the slide to hold it instead of spilling into the next one
+  quick.parentElement.style.minHeight = `max(100svh, ${quickY + quickH + 48}px)`;
 }
 // starting size and spot of the wordmark, with the quick start right under it, centered together
 function landing() {

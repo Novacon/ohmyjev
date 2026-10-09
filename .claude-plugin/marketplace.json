@@ -3,7 +3,7 @@
   "owner": {
     "name": "Novacon"
   },
-  "description": "ohmyjev: Jev-decided guardrails for Claude Code",
+  "description": "ohmyjev: Jev-decided guardrails for Claude Code, pi and omp",
   "plugins": [
     {
       "name": "ohmyjev",

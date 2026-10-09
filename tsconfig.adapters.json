@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "es2023", "lib": ["es2023", "esnext.promise"], "types": ["node", "bun"],
+    "module": "esnext", "moduleResolution": "bundler",
+    "strict": true, "noUncheckedIndexedAccess": true,
+    "noEmit": true, "skipLibCheck": true, "allowImportingTsExtensions": true
+  },
+  "include": ["adapters", "hooks/jev.ts", "hooks/policy.ts"]
+}

@@ -1,0 +1,234 @@
+{
+  "name": "ohmyjev",
+  "version": "0.2.0",
+  "description": "Guardrails for coding agents, decided by TypeSafe's Jev: blocks destructive commands, catches prompt injection, pushes back on an unverified done and routes effort per turn. For Claude Code, pi and omp.",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://ohmyjev.xyz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Novacon/ohmyjev.git"
+  },
+  "keywords": [
+    "pi-package",
+    "omp",
+    "pi",
+    "claude-code",
+    "jev",
+    "guardrails"
+  ],
+  "files": [
+    "adapters/*.ts",
+    "hooks/jev.ts",
+    "hooks/policy.ts",
+    "extras/"
+  ],
+  "pi": {
+    "extensions": [
+      "./adapters/pi.ts"
+    ]
+  },
+  "omp": {
+    "extensions": [
+      "./adapters/omp.ts"
+    ],
+    "settings": {
+      "apiKey": {
+        "type": "string",
+        "description": "TypeSafe API key; empty uses TYPESAFE_API_KEY, then OPENROUTER_API_KEY",
+        "default": "",
+        "secret": true,
+        "env": "TYPESAFE_API_KEY"
+      },
+      "jevModel": {
+        "type": "string",
+        "description": "Model id sent to the TypeSafe endpoint",
+        "default": "jev-1.13.0"
+      },
+      "bashGate": {
+        "type": "boolean",
+        "description": "Deny irreversible or destructive shell and eval calls",
+        "default": true
+      },
+      "writeGate": {
+        "type": "boolean",
+        "description": "Deny writes outside the repo/allowPaths and writes holding credentials",
+        "default": true
+      },
+      "injectionScreen": {
+        "type": "boolean",
+        "description": "Warn the model when untrusted tool output contains instructions aimed at it",
+        "default": true
+      },
+      "doneCheck": {
+        "type": "boolean",
+        "description": "Push back once when the agent claims done without verifying",
+        "default": true
+      },
+      "exfilGate": {
+        "type": "boolean",
+        "description": "Deny URL reads and MCP calls that send local data or credentials out",
+        "default": true
+      },
+      "screenReads": {
+        "type": "boolean",
+        "description": "Run the injection screen on files read from outside the repo/allowPaths",
+        "default": true
+      },
+      "bashIrreversible": {
+        "type": "number",
+        "description": "Deny when Jev rates a command irreversible at least this confidently (0-1)",
+        "default": 0.6
+      },
+      "bashDestructive": {
+        "type": "number",
+        "description": "Deny when destructive intent is at least this probable (0-1)",
+        "default": 0.7
+      },
+      "writeSecret": {
+        "type": "number",
+        "description": "Deny when write content holds a credential at least this probably (0-1)",
+        "default": 0.7
+      },
+      "writeSecretsKind": {
+        "type": "number",
+        "description": "Deny when the destination is a secrets file at least this confidently (0-1)",
+        "default": 0.8
+      },
+      "injection": {
+        "type": "number",
+        "description": "Flag tool output as prompt injection at this probability (0-1)",
+        "default": 0.7
+      },
+      "doneClaimed": {
+        "type": "number",
+        "description": "Check only when Jev says completion was claimed at least this probably (0-1)",
+        "default": 0.7
+      },
+      "doneVerifiedMax": {
+        "type": "number",
+        "description": "Push back when verification probability is below this value (0-1)",
+        "default": 0.3
+      },
+      "doneAsksUserMax": {
+        "type": "number",
+        "description": "Skip pushback when the reply asks the user at or above this probability (0-1)",
+        "default": 0.5
+      },
+      "exfil": {
+        "type": "number",
+        "description": "Deny when Jev rates a call as sending local data out at least this probably (0-1)",
+        "default": 0.7
+      },
+      "askJev": {
+        "type": "boolean",
+        "description": "Expose the ask_jev tool for quick judgments about repo files or text",
+        "default": true
+      },
+      "autoCompact": {
+        "type": "boolean",
+        "description": "Compact after Jev sees a task change at a natural boundary",
+        "default": true
+      },
+      "compactSwitched": {
+        "type": "number",
+        "description": "Compact when task-switch probability reaches this value (0-1)",
+        "default": 0.8
+      },
+      "compactBoundary": {
+        "type": "number",
+        "description": "Compact when boundary probability also reaches this value (0-1)",
+        "default": 0.6
+      },
+      "compactMinPercent": {
+        "type": "number",
+        "description": "Only compact once context usage reaches this percentage (0-100)",
+        "default": 40
+      },
+      "routeEffort": {
+        "type": "boolean",
+        "description": "Raise or lower reasoning effort per prompt from Jev's classification",
+        "default": true
+      },
+      "routeSubagents": {
+        "type": "boolean",
+        "description": "Pick the subagent model tier from the current request",
+        "default": true
+      },
+      "routeMainModel": {
+        "type": "boolean",
+        "description": "Also switch the main model per prompt",
+        "default": false
+      },
+      "routeUpgrade": {
+        "type": "number",
+        "description": "Raise effort or model tier at this confidence or above (0-1)",
+        "default": 0.3
+      },
+      "routeDowngrade": {
+        "type": "number",
+        "description": "Lower effort or model tier at this confidence or above (0-1)",
+        "default": 0.6
+      },
+      "routeRisky": {
+        "type": "number",
+        "description": "At this probability a risky request routes deep with at least high effort (0-1)",
+        "default": 0.7
+      },
+      "routeWithoutKey": {
+        "type": "boolean",
+        "description": "Use a host small-model classifier when available and no Jev key is configured",
+        "default": true
+      },
+      "fastModel": {
+        "type": "string",
+        "description": "OMP model selector or role for the fast tier",
+        "default": "@smol"
+      },
+      "balancedModel": {
+        "type": "string",
+        "description": "OMP model selector or role for the balanced tier",
+        "default": "@default"
+      },
+      "deepModel": {
+        "type": "string",
+        "description": "OMP model selector or role for the deep tier",
+        "default": "@slow"
+      },
+      "allowPaths": {
+        "type": "string",
+        "description": "Semicolon-separated write paths outside the repo; ~ and TMPDIR expand",
+        "default": "~/.claude;$TMPDIR;/tmp"
+      },
+      "policies": {
+        "type": "string",
+        "description": "Semicolon-separated user policies that every gate weighs",
+        "default": ""
+      },
+      "timeoutMs": {
+        "type": "number",
+        "description": "Milliseconds to wait for Jev before failing open",
+        "default": 1500
+      },
+      "logDecisions": {
+        "type": "boolean",
+        "description": "Show display-only routing and lifecycle decision lines",
+        "default": true
+      },
+      "statusLine": {
+        "type": "boolean",
+        "description": "Pin Jev calls, denies and route in the OMP status area",
+        "default": true
+      }
+    }
+  },
+  "scripts": {
+    "test": "bun test adapters && claude plugin test .",
+    "typecheck": "tsc -p . && tsc -p tsconfig.adapters.json"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@types/node": "^22.10.0",
+    "typescript": "5.6.3"
+  }
+}
