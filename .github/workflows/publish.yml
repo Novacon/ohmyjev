@@ -1,0 +1,31 @@
+name: publish
+
+# Publishes the pi/omp package to npm when a version tag (v0.2.0) is pushed. Trusted publishing: npm checks this
+# workflow's GitHub identity, so no npm token is stored anywhere. The npm package's Trusted Publisher must name
+# repository Novacon/ohmyjev and workflow file publish.yml.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: oven-sh/setup-bun@v2
+      - name: The tag matches package.json
+        run: test "${GITHUB_REF_NAME#v}" = "$(node -p 'require("./package.json").version')"
+      - run: bun install --frozen-lockfile
+      - run: bun test adapters
+      - run: ./node_modules/.bin/tsc -p tsconfig.adapters.json
+      - name: npm with trusted publishing (11.5.1 or later)
+        run: npm install -g npm@11
+      - run: npm publish
