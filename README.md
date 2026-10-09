@@ -16,6 +16,7 @@
   <img alt="Claude Code 2.1.287+" src="https://img.shields.io/badge/Claude_Code-2.1.287%2B-d97757">
   <img alt="Decided by Jev" src="https://img.shields.io/badge/decided_by-Jev-101315">
   <img alt="pi and omp" src="https://img.shields.io/badge/also_for-pi_·_omp-86a893">
+  <a href="https://www.npmjs.com/package/ohmyjev"><img alt="npm" src="https://img.shields.io/npm/v/ohmyjev?color=de6145"></a>
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-798186">
 </p>
 
@@ -142,12 +143,12 @@ plugin, and write to the same `~/.ohmyjev` logs, so `/jev` and the statusline se
 ### omp
 
 ```bash
-omp plugin install github:Novacon/ohmyjev
+omp plugin install ohmyjev
 ```
 
-Or from the marketplace this repo already serves: `/marketplace add Novacon/ohmyjev`, then
-`/marketplace install ohmyjev@ohmyjev`. Restart the session after installing. Settings use the names in
-[Settings](#settings):
+That installs the npm package; `omp plugin install github:Novacon/ohmyjev` installs straight from GitHub instead. Or use
+the marketplace this repo already serves: `/marketplace add Novacon/ohmyjev`, then `/marketplace install ohmyjev@ohmyjev`.
+Restart the session after installing. Settings use the names in [Settings](#settings):
 
 ```bash
 omp plugin config list ohmyjev
@@ -159,8 +160,10 @@ The router's tiers default to omp's own model roles: `@smol`, `@default` and `@s
 ### pi
 
 ```bash
-pi install git:github.com/Novacon/ohmyjev
+pi install npm:ohmyjev
 ```
+
+Or straight from GitHub: `pi install git:github.com/Novacon/ohmyjev`.
 
 pi has no settings screen for extensions, so put yours under an `ohmyjev` key in `~/.pi/agent/settings.json`, or in
 `.pi/settings.json` for one project (project values win):
@@ -327,6 +330,12 @@ have set up, through pi's own provider. Logs and session files stay in `~/.ohmyj
 ```bash
 claude plugin update ohmyjev@ohmyjev      # then restart Claude Code
 claude plugin uninstall ohmyjev@ohmyjev
+
+omp plugin upgrade ohmyjev                # omp; restart the session
+omp plugin uninstall ohmyjev
+
+pi update npm:ohmyjev                     # pi
+pi remove npm:ohmyjev
 ```
 
 ## Troubleshooting

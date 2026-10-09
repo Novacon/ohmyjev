@@ -368,7 +368,8 @@ td:nth-child(2) { color: var(--warm); }
   .rule { grid-template-columns: 1fr; gap: 2px; }
   .rule .to { display: none; }
   .indicator { display: none; }
-  .bottom { font-size: .6875rem; }
+  .bottom { font-size: .625rem; gap: 12px; }
+  .footer { letter-spacing: .04em; white-space: nowrap; }
   .card-head .meta { text-align: left; }
   /* settings table becomes one block per setting: name and default on a line, what it changes under it */
   thead { display: none; }
@@ -409,12 +410,12 @@ td:nth-child(2) { color: var(--warm); }
         </div>
         <div class="qs-rows" data-agent="omp" hidden>
           <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
-          <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>omp plugin install github:Novacon/ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>omp plugin install ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/jev</code><span class="where lbl">omp</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
         </div>
         <div class="qs-rows" data-agent="pi" hidden>
           <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
-          <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>pi install git:github.com/Novacon/ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>pi install npm:ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/jev</code><span class="where lbl">pi</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
         </div>
       </div>
@@ -617,7 +618,7 @@ claude plugin uninstall ohmyjev@ohmyjev</pre>
 </main>
 
 <div class="bottom lbl">
-  <footer class="footer">© 2026 <a href="https://novacon.io">NOVACON LLC</a> · <a href="https://github.com/Novacon/ohmyjev">GitHub <span aria-hidden="true">↗</span></a></footer>
+  <footer class="footer">© 2026 <a href="https://novacon.io">NOVACON LLC</a> · <a href="https://github.com/Novacon/ohmyjev">GitHub <span aria-hidden="true">↗</span></a> · <a href="https://www.npmjs.com/package/ohmyjev">npm <span aria-hidden="true">↗</span></a></footer>
   <div class="bottom-right">
     <aside class="indicator" aria-label="Slide progress">
       <span id="slide-current">01</span>
