@@ -480,6 +480,16 @@ export function hostPath(p: string): string | null {
 export const parseWorktrees = (porcelain: string): string[] =>
   porcelain.split('\n').filter(l => l.startsWith('worktree ')).map(l => l.slice('worktree '.length).trim()).filter(Boolean)
 
+/** Every file an apply_patch patch adds, updates, deletes or moves to (omp and Codex edits). */
+export function applyPatchPaths(patch: string): string[] {
+  const paths: string[] = []
+  for (const line of patch.split('\n')) {
+    const match = /^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/.exec(line.trim())
+    if (match?.[1]) paths.push(match[1])
+  }
+  return paths
+}
+
 export const isUnder = (target: string, root: string): boolean =>
   target === root || target.startsWith(root.replace(/\/+$/, '') + '/')
 

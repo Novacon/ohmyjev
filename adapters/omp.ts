@@ -4,7 +4,7 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, DEFAULTS, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead, configCommand,
+  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead, configCommand, applyPatchPaths,
   OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
   keepInstructions, modelOf, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
@@ -149,15 +149,6 @@ const urlRead = (tool: string, input: RecordOfUnknown): boolean => tool === 'rea
 const exfilTool = (tool: string, input: RecordOfUnknown): boolean => urlRead(tool, input) || tool.startsWith('mcp__')
 const githubWrite = (tool: string, input: RecordOfUnknown): boolean =>
   tool === 'github' && GITHUB_READONLY_OPS[string(input, 'op')] !== true
-
-function applyPatchPaths(patch: string): string[] {
-  const paths: string[] = []
-  for (const line of patch.split('\n')) {
-    const match = /^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/.exec(line.trim())
-    if (match?.[1]) paths.push(match[1])
-  }
-  return paths
-}
 
 function writePaths(tool: string, input: RecordOfUnknown): string[] {
   const paths = Array.isArray(input.paths) ? input.paths.filter((p): p is string => typeof p === 'string' && p !== '') : []

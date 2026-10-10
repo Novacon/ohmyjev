@@ -13,14 +13,14 @@ d88P  88888888 "Y88P"  888  888 888  888  888  "Y88888   888  "Y8888    Y88P
 ```
 
 <p align="center">
-  Guardrails for Claude Code, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.<br>
+  Guardrails for Claude Code, Codex, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.<br>
   One mod that stops irreversible and data-leaking commands, even in bypass mode, and runs them when you say yes. It also flags prompt injection, pushes back on an unverified "done" and routes effort per turn.
 </p>
 
 <p align="center">
   <img alt="Claude Code 2.1.287+" src="https://img.shields.io/badge/Claude_Code-2.1.287%2B-d97757">
   <img alt="Decided by Jev" src="https://img.shields.io/badge/decided_by-Jev-101315">
-  <img alt="pi and omp" src="https://img.shields.io/badge/also_for-pi_·_omp-86a893">
+  <img alt="Codex, pi and omp" src="https://img.shields.io/badge/also_for-Codex_·_pi_·_omp-86a893">
   <a href="https://www.npmjs.com/package/ohmyjev"><img alt="npm" src="https://img.shields.io/npm/v/ohmyjev?color=de6145"></a>
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-798186">
 </p>
@@ -30,7 +30,7 @@ d88P  88888888 "Y88P"  888  888 888  888  888  "Y88888   888  "Y8888    Y88P
   <a href="#quick-start">Quick start</a> ·
   <a href="#what-you-get">What you get</a> ·
   <a href="#install">Install</a> ·
-  <a href="#pi-and-omp">pi and omp</a> ·
+  <a href="#codex-pi-and-omp">Codex, pi and omp</a> ·
   <a href="#using-it">Using it</a> ·
   <a href="#settings">Settings</a> ·
   <a href="#privacy">Privacy</a> ·
@@ -144,11 +144,29 @@ key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0
 If it says `key: none`, ohmyjev can't see a key. In that case every gate stays open, the router falls back to Claude
 Code's built-in classifier (up only), and the status under the prompt shows `jev ⚠ no key`.
 
-## pi and omp
+## Codex, pi and omp
 
-The same checks run in [pi](https://pi.dev) and [omp](https://github.com/can1357/oh-my-pi) as a native extension.
-They share the decision logic and the key lookup (`TYPESAFE_API_KEY`, then `OPENROUTER_API_KEY`) with the Claude Code
-plugin, and write to the same `~/.ohmyjev` logs, so `/omj` and the statusline segment work the same way.
+The same checks run in [Codex](https://developers.openai.com/codex) as a plugin with hooks, and in [pi](https://pi.dev)
+and [omp](https://github.com/can1357/oh-my-pi) as a native extension. They share the decision logic and the key lookup
+(`TYPESAFE_API_KEY`, then `OPENROUTER_API_KEY`) with the Claude Code plugin, and write to the same `~/.ohmyjev` logs, so
+`/omj stats` in any of them shows every session.
+
+### Codex
+
+```bash
+codex plugin marketplace add Novacon/ohmyjev
+codex plugin add ohmyjev@ohmyjev
+```
+
+Then start Codex and run `/hooks` once: Codex skips a plugin's hooks until you trust them. ohmyjev needs Node on your
+`PATH` and the key in the shell that starts Codex. It gates `Bash`, `apply_patch` edits and MCP calls, screens their
+output, and runs the done-check. Saying yes after a block works the same way. Codex hooks can't change the model or add
+a tool, so there is no router, no `ask_jev` and no `/omj` command. Put settings in `~/.codex/ohmyjev.json`, using the
+names in [Settings](#settings):
+
+```json
+{ "requested": 0.9, "policies": "never touch the prod cluster" }
+```
 
 ### omp
 
@@ -184,18 +202,19 @@ pi has no settings screen for extensions, so put yours under an `ohmyjev` key in
 
 ### What differs
 
-| | Claude Code | omp | pi |
-|---|---|---|---|
-| Bash gate | Bash | `bash`, `eval`, and `github` pushes and PRs | `bash`, `powershell` |
-| Write gate | Write, Edit, NotebookEdit | `write`, `edit` (patches and renames included), `ast_edit` | `write`, `edit` |
-| Exfil gate | WebFetch, MCP tools | `read` of a URL, MCP tools | MCP tools (pi has no fetch tool; `curl` goes through the bash gate) |
-| Injection screen | Bash, WebFetch, MCP, Reads outside the repo | `bash`, `github`, URL reads, MCP, reads outside the repo | `bash`, `powershell`, MCP, reads outside the repo |
-| Done-check | ✓ | ✓ | ✓ |
-| Router effort | ✓ | ✓ (left alone while you're on `auto`) | ✓ |
-| Router subagent model | general-purpose subagents | subagents on the default `task` role | none: pi has no subagents |
-| Router without a key | Claude Code's built-in classifier, up only | off: omp has no separate classifier call for extensions | the cheapest model you've set up, up only |
-| Decision lines | in the transcript | notifications | notifications |
-| Status | under the prompt | in the footer | in the footer |
+| | Claude Code | Codex | omp | pi |
+|---|---|---|---|---|
+| Bash gate | Bash | Bash | `bash`, `eval`, and `github` pushes and PRs | `bash`, `powershell` |
+| Write gate | Write, Edit, NotebookEdit | `apply_patch` | `write`, `edit` (patches and renames included), `ast_edit` | `write`, `edit` |
+| Exfil gate | WebFetch, MCP tools | MCP tools | `read` of a URL, MCP tools | MCP tools (pi has no fetch tool; `curl` goes through the bash gate) |
+| Injection screen | Bash, WebFetch, MCP, Reads outside the repo | Bash, MCP | `bash`, `github`, URL reads, MCP, reads outside the repo | `bash`, `powershell`, MCP, reads outside the repo |
+| Done-check | ✓ | ✓ | ✓ | ✓ |
+| Router effort | ✓ | none: hooks can't set it | ✓ (left alone while you're on `auto`) | ✓ |
+| Router subagent model | general-purpose subagents | none | subagents on the default `task` role | none: pi has no subagents |
+| Router without a key | Claude Code's built-in classifier, up only | none | off: omp has no separate classifier call for extensions | the cheapest model you've set up, up only |
+| `/omj`, `ask_jev` | ✓ | none: hooks can't add commands or tools | ✓ | ✓ |
+| Decision lines | in the transcript | the log only | notifications | notifications |
+| Status | under the prompt | none | in the footer | in the footer |
 
 ## Using it
 
@@ -378,6 +397,9 @@ have set up, through pi's own provider. Logs and session files stay in `~/.ohmyj
 ```bash
 claude plugin update ohmyjev@ohmyjev      # then restart Claude Code
 claude plugin uninstall ohmyjev@ohmyjev
+
+codex plugin marketplace upgrade ohmyjev  # Codex; then trust the changed hooks in /hooks
+codex plugin remove ohmyjev@ohmyjev
 
 omp plugin upgrade ohmyjev                # omp; restart the session
 omp plugin uninstall ohmyjev

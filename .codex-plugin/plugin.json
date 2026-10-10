@@ -1,0 +1,32 @@
+{
+  "name": "ohmyjev",
+  "version": "0.7.0",
+  "description": "Guardrails for Codex, decided by Jev: blocks irreversible and data-leaking commands, even in full-auto, and runs them when you say yes.",
+  "author": {
+    "name": "Novacon",
+    "url": "https://github.com/Novacon"
+  },
+  "homepage": "https://ohmyjev.xyz",
+  "repository": "https://github.com/Novacon/ohmyjev",
+  "license": "MIT",
+  "keywords": [
+    "guardrails",
+    "ai-safety",
+    "prompt-injection",
+    "codex",
+    "jev"
+  ],
+  "hooks": "./codex/hooks.json",
+  "interface": {
+    "displayName": "ohmyjev",
+    "shortDescription": "Jev-decided guardrails for Bash, edits and MCP calls.",
+    "longDescription": "Denies commands Jev rates irreversible or data-leaking, edits outside the repo or holding a credential, and MCP calls that send local data out. Flags prompt injection in tool output and pushes back on an unverified done. After a block, answer yes and that exact call runs.",
+    "developerName": "Novacon",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read"
+    ],
+    "websiteURL": "https://ohmyjev.xyz",
+    "brandColor": "#00EE22"
+  }
+}

@@ -420,15 +420,20 @@ td.on { color: var(--ok); }
 <main>
   <section id="top" class="slide landing" data-title="Quick start" aria-label="ohmyjev quick start">
     <div class="quick">
-      <h1>Guardrails for Claude Code, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.</h1>
+      <h1>Guardrails for Claude Code, Codex, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.</h1>
       <p class="tagline">One mod that stops irreversible and data-leaking commands, even in bypass mode, and runs them when you say yes. It also flags prompt injection, pushes back on an unverified "done" and routes effort per turn.</p>
-      <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>pi · omp</span><span>Decided by Jev</span><span>MIT license</span></p>
+      <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>Codex · pi · omp</span><span>Decided by Jev</span><span>MIT license</span></p>
       <div class="qs">
-        <div class="qs-head lbl"><span>Quick start</span><span class="qs-tabs" role="tablist" aria-label="Agent"><button type="button" class="qs-tab" role="tab" data-agent="claude" aria-selected="true">Claude Code</button><button type="button" class="qs-tab" role="tab" data-agent="omp" aria-selected="false">omp</button><button type="button" class="qs-tab" role="tab" data-agent="pi" aria-selected="false">pi</button></span></div>
+        <div class="qs-head lbl"><span>Quick start</span><span class="qs-tabs" role="tablist" aria-label="Agent"><button type="button" class="qs-tab" role="tab" data-agent="claude" aria-selected="true">Claude Code</button><button type="button" class="qs-tab" role="tab" data-agent="codex" aria-selected="false">Codex</button><button type="button" class="qs-tab" role="tab" data-agent="omp" aria-selected="false">omp</button><button type="button" class="qs-tab" role="tab" data-agent="pi" aria-selected="false">pi</button></span></div>
         <div class="qs-rows" data-agent="claude">
           <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/plugin install ohmyjev --marketplace Novacon/ohmyjev</code><span class="where lbl">claude code</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/omj</code><span class="where lbl">claude code</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+        </div>
+        <div class="qs-rows" data-agent="codex" hidden>
+          <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>codex plugin marketplace add Novacon/ohmyjev &amp;&amp; codex plugin add ohmyjev@ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/hooks</code><span class="where lbl">codex · trust ohmyjev</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
         </div>
         <div class="qs-rows" data-agent="omp" hidden>
           <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>

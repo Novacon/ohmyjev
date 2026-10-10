@@ -18,3 +18,10 @@ test('the npm package ships every hooks file the adapters import', async () => {
   expect(needed.size).toBeGreaterThan(0)
   for (const f of needed) expect(pkg.files, `${f} is missing from package.json files`).toContain(f)
 })
+
+test('package.json, the Claude Code plugin and the Codex plugin carry the same version', async () => {
+  const v = async (p: string) => (JSON.parse(await readFile(p, 'utf8')) as { version: string }).version
+  const pkg = await v('package.json')
+  expect(await v('.claude-plugin/plugin.json')).toBe(pkg)
+  expect(await v('.codex-plugin/plugin.json')).toBe(pkg)
+})
