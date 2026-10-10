@@ -478,12 +478,12 @@ td.on { color: var(--ok); }
       </div>
       <div class="body reveal">
         <div class="grid g5">
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind gate">Gate</span></div><h3>Bash gate</h3><p>Denies a command Jev rates irreversible at 0.6+ or destructive at 0.7+.</p><p class="cfg">bashGate</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind gate">Gate</span></div><h3>Bash gate</h3><p>Denies a command Jev rates irreversible at 0.6+. Reversible work passes: deleting lines, dropping a co-author, uninstalling. Asked for it in your message? It goes through.</p><p class="cfg">bashGate</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg><span class="kind gate">Gate</span></div><h3>Write gate</h3><p>Denies writes outside the repo and <code>allowPaths</code>, or with a real credential in them. Every worktree of the repo counts, and so does another repo the agent moves into. The path check is plain code and follows symlinks like the OS.</p><p class="cfg">writeGate</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg><span class="kind gate">Gate</span></div><h3>Exfil gate</h3><p>Denies a WebFetch or MCP call Jev rates 0.7+ for sending your data, files or credentials out.</p><p class="cfg">exfilGate</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM9 10h7M9 14h7M9 18h4"/></svg><span class="kind gate">Gate</span></div><h3>Policies</h3><p>Every gate also checks the call against your own plain-English rules.</p><p class="cfg">policies</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"/></svg><span class="kind check">Check</span></div><h3>Injection screen</h3><p>Output from Bash, WebFetch, MCP or an outside Read that talks to the model gets a "treat as data" note.</p><p class="cfg">injectionScreen</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind check">Check</span></div><h3>Done-check</h3><p>Says it's done with no sign of a check? It blocks the stop once and tells the agent to verify.</p><p class="cfg">doneCheck</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind check">Check</span></div><h3>Done-check</h3><p>Says it's done with no sign of a check? It blocks the stop once and tells the agent to verify. A turn with no tools is never blocked.</p><p class="cfg">doneCheck</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind route">Route</span></div><h3>Router</h3><p>Sets effort and the subagent model from one Jev call per request. No key? Claude Code's own classifier steps in, routing up only.</p><p class="cfg">routeEffort, routeSubagents</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind route">Route</span></div><h3>Auto-compact</h3><p>Task changed and context at least 40% full? It compacts, keeping the new request in full.</p><p class="cfg">autoCompact</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about repo files or text without loading them into its own context.</p><p class="cfg">askJev</p></div>
@@ -517,7 +517,7 @@ td.on { color: var(--ok); }
           </div>
           <div class="side">
             <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>what claude sees on a deny</span></div><pre><span class="o">ohmyjev blocked this: irreversible (0.95): nothing would restore what this removes or overwrites.</span>
-This block is final. Do not try to work around it with another command, another tool, a different path, or an encoding that does the same thing. Stop and tell the user what was blocked and why.</pre></div>
+Do not try to work around it with another command, another tool, a different path, or an encoding that does the same thing. Tell the user what was blocked and why. If they reply asking for exactly this, in words that name it, run it again: their request then lets it through.</pre></div>
             <div class="callout">
               <h3>Fails open, never nags</h3>
               <p>Middling answers, a slow or down Jev, a missing key and any error inside ohmyjev all fall through to the normal flow. It never asks you to approve anything, so bypass-mode agents run fine.</p>
@@ -573,7 +573,7 @@ This block is final. Do not try to work around it with another command, another 
         <div class="grid g4">
           <div class="fix"><h3>jev ⚠ no key</h3><p>Set <code>TYPESAFE_API_KEY</code> in the shell that starts Claude Code, or run <code>claude plugin configure ohmyjev@ohmyjev</code>.</p></div>
           <div class="fix"><h3>jev ⚠ down</h3><p>A Jev call failed or took over 1.5 s in the last 5 minutes. Gates let calls through until Jev answers again.</p></div>
-          <div class="fix"><h3>Blocked by mistake</h3><p><code>/omj</code> shows the reason. Raise that gate's threshold in <code>/config</code>, turn it off, or <code>/omj off</code> for the session. Local MCP tools can trip <code>exfilGate</code>.</p></div>
+          <div class="fix"><h3>Blocked by mistake</h3><p>Ask for the action by name, like "yes, delete that folder", and the agent can run it again. <code>/omj</code> shows the reason. Raise that gate's threshold in <code>/config</code>, turn it off, or <code>/omj off</code> for the session. Local MCP tools can trip <code>exfilGate</code>.</p></div>
           <div class="fix"><h3>Nothing happens</h3><p>Run <code>claude --debug</code>. A failing hook leaves a line naming it and the reason.</p></div>
         </div>
       </div>
@@ -631,6 +631,7 @@ key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</pre></div>
             <tbody>
               <tr><td><code>enabled</code></td><td class="on">on</td><td>The whole mod. Off lets every call through; <code>/omj on</code> and <code>off</code> change it for one session.</td></tr>
               <tr><td><code>bashGate</code>, <code>writeGate</code>, <code>exfilGate</code></td><td class="on">on</td><td>Turns each gate on or off.</td></tr>
+              <tr><td><code>requested</code></td><td>0.8</td><td>How sure Jev must be that your message asked for a call before a gate lets it through. Policy and path denies always stand.</td></tr>
               <tr><td><code>injectionScreen</code>, <code>screenReads</code></td><td class="on">on</td><td>Screens tool output, including Reads from outside the repo.</td></tr>
               <tr><td><code>doneCheck</code></td><td class="on">on</td><td>Pushes back on an unverified "done".</td></tr>
               <tr><td><code>routeEffort</code>, <code>routeSubagents</code></td><td class="on">on</td><td>Lets the router change effort and the subagent model.</td></tr>

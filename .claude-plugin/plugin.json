@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Jev for Claude Code: Bash and Write gates, an injection screen, and a done-check, decided by TypeSafe's Jev.",
   "author": {
     "name": "lordknows13"
@@ -103,6 +103,12 @@
       "title": "Exfil probability to deny",
       "description": "Deny when Jev rates the call as sending local data out at least this probable (0-1)",
       "default": 0.7
+    },
+    "requested": {
+      "type": "number",
+      "title": "Let through what you asked for",
+      "description": "A gate's Jev deny passes when Jev rates your latest message as asking for exactly that call at least this probable (0-1). Policy and path denies always stand",
+      "default": 0.8
     },
     "doneClaimed": {
       "type": "number",

@@ -226,6 +226,7 @@ describe('Pi stop policy', () => {
         canContinue: true,
         contextMessages: [
           { role: 'user', content: 'Fix it' },
+          { role: 'assistant', content: [{ type: 'toolCall', id: 't1', name: 'edit', arguments: { path: 'a.ts' } }] },
           { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] },
         ],
       },

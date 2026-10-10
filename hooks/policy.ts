@@ -24,6 +24,7 @@ export const DEFAULTS = {
   doneVerifiedMax: 0.3,
   doneAsksUserMax: 0.5,
   exfil: 0.7,
+  requested: 0.8,
   askJev: true,
   autoCompact: true,
   compactSwitched: 0.8,
@@ -75,8 +76,9 @@ export const score = (instructions: string, criteria: string[]): Question => ({ 
 // --- questions (rubrics from ten-levels-of-jev level 6) ---
 
 export const BLOCK_NOTICE =
-  'This block is final. Do not try to work around it with another command, another tool, a different path, ' +
-  'or an encoding that does the same thing. Stop and tell the user what was blocked and why.'
+  'Do not try to work around it with another command, another tool, a different path, or an encoding that does the ' +
+  'same thing. Tell the user what was blocked and why. If they reply asking for exactly this, in words that name it, ' +
+  'run it again: their request then lets it through.'
 export const DONE_REASON =
   "You said this is done but nothing shows it was verified. Run the check, or say explicitly why it can't be verified."
 
@@ -122,11 +124,20 @@ export const POLICY_Q: Questions = {
   ),
 }
 /** A gate's questions plus the policy question, only when the user wrote policies. */
-export const withPolicyQ = (q: Questions, c: Config): Questions => (splitList(c.policies).length ? { ...q, ...POLICY_Q } : q)
+export const withPolicyQ = (q: Questions, c: Config, request = ''): Questions =>
+  ({ ...q, ...(splitList(c.policies).length ? POLICY_Q : {}), ...(request.trim() ? REQUESTED_Q : {}) })
 /** A gate's state plus the user's policies, only when there are some. */
-export const withPolicies = <T extends object>(state: T, c: Config): T | (T & { policies: string[] }) => {
+export const withPolicies = <T extends object>(state: T, c: Config, request = ''): T => {
   const policies = splitList(c.policies)
-  return policies.length ? { ...state, policies } : state
+  return { ...state, ...(policies.length ? { policies } : {}), ...(request.trim() ? { request: clip(request, 1500) } : {}) }
+}
+/** Asked only when there is a user request: does the user's own latest message ask for exactly this call? */
+export const REQUESTED_Q: Questions = {
+  requested: noul(
+    'Does `request`, the user\'s own latest message, explicitly ask for what this call does?',
+    'The user named this action or its target: delete that file, force push, remove the co-author line, uninstall X',
+    'The request is about something else, is vague, or the agent chose this step on its own',
+  ),
 }
 /** The tier rubric: Jev's choice criteria, and the labels the built-in classifier picks from. */
 const TIER_CRITERIA: Record<Tier, string> = {
@@ -197,15 +208,22 @@ const policyDeny = (a: Answers, threshold: number): Judged | null => {
   return p >= threshold ? { verdict: 'deny', reason: `breaks a listed policy (${f2(p)})` } : null
 }
 
+/** A Jev deny the user's own request asked for passes. Policy and path denies never reach here. */
+const unlessRequested = (j: Judged, a: Answers, c: Config): Judged => {
+  const r = nv(a, 'requested')
+  return j.verdict === 'deny' && r >= c.requested ? { verdict: null, reason: `${j.reason}; the user asked for it (${f2(r)})` } : j
+}
+
 export function gateBash(a: Answers, c: Config): Judged {
   const effect = ch(a, 'effect')
   const destructive = nv(a, 'destructive_intent')
   const policy = policyDeny(a, c.bashDestructive)
   if (policy) return policy
+  // destructive intent alone is most editing (deleting lines, uninstalling); it only tips an irreversible answer
   if (effect.choice === 'irreversible' && effect.confidence >= c.bashIrreversible)
-    return { verdict: 'deny', reason: `irreversible (${f2(effect.confidence)}): nothing would restore what this removes or overwrites` }
-  if (destructive >= c.bashDestructive)
-    return { verdict: 'deny', reason: `destructive intent (${f2(destructive)}): this command aims to wipe something` }
+    return unlessRequested({ verdict: 'deny', reason: `irreversible (${f2(effect.confidence)}): nothing would restore what this removes or overwrites` }, a, c)
+  if (effect.choice === 'irreversible' && destructive >= c.bashDestructive)
+    return unlessRequested({ verdict: 'deny', reason: `irreversible (${f2(effect.confidence)}) and destructive (${f2(destructive)}): this aims to wipe something with no way back` }, a, c)
   return { verdict: null, reason: `${effect.choice} (${f2(effect.confidence)}), destructive ${f2(destructive)}` }
 }
 
@@ -215,9 +233,9 @@ export function gateWrite(a: Answers, c: Config): Judged {
   const policy = policyDeny(a, c.writeSecret)
   if (policy) return policy
   if (secret >= c.writeSecret)
-    return { verdict: 'deny', reason: `contains a credential (${f2(secret)}): put it in an ignored .env or a secret store` }
+    return unlessRequested({ verdict: 'deny', reason: `contains a credential (${f2(secret)}): put it in an ignored .env or a secret store` }, a, c)
   if (kind.choice === 'secrets' && kind.confidence >= c.writeSecretsKind)
-    return { verdict: 'deny', reason: `a secrets file (${f2(kind.confidence)}): keep credentials out of the repo` }
+    return unlessRequested({ verdict: 'deny', reason: `a secrets file (${f2(kind.confidence)}): keep credentials out of the repo` }, a, c)
   return { verdict: null, reason: `${kind.choice} (${f2(kind.confidence)}), secret ${f2(secret)}` }
 }
 
@@ -225,7 +243,7 @@ export function gateExfil(a: Answers, c: Config): Judged {
   const p = nv(a, 'exfiltrates')
   const policy = policyDeny(a, c.exfil)
   if (policy) return policy
-  if (p >= c.exfil) return { verdict: 'deny', reason: `sends local data out (${f2(p)}): keep local files and credentials local` }
+  if (p >= c.exfil) return unlessRequested({ verdict: 'deny', reason: `sends local data out (${f2(p)}): keep local files and credentials local` }, a, c)
   return { verdict: null, reason: `exfil ${f2(p)}` }
 }
 
@@ -239,8 +257,10 @@ export function screen(a: Answers, c: Config): { flagged: boolean; reason: strin
 }
 
 /** The done-check (DONE_REASON when done is claimed with no sign of a check or question) and the compact verdict. */
-export function judgeStop(a: Answers, c: Config): { block: string | null; wantsCompact: boolean } {
+/** `ranTools` false: the turn ran no tool, so there is nothing that could have been verified and nothing to block. */
+export function judgeStop(a: Answers, c: Config, ranTools = true): { block: string | null; wantsCompact: boolean } {
   const unverified =
+    ranTools &&
     nv(a, 'claimed_done') >= c.doneClaimed && nv(a, 'verified') < c.doneVerifiedMax && nv(a, 'asks_user') < c.doneAsksUserMax
   const wantsCompact = nv(a, 'switched_gears') >= c.compactSwitched && nv(a, 'at_boundary') >= c.compactBoundary
   return { block: unverified ? DONE_REASON : null, wantsCompact }

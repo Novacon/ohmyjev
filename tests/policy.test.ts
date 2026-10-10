@@ -20,7 +20,10 @@ test('bash gate: deny at the thresholds, otherwise pass', () => {
   expect(gateBash(bash('irreversible', 0.6, 0.1), c).verdict).toBe('deny')
   expect(gateBash(bash('irreversible', 0.6, 0.1), c).reason).toContain('irreversible (0.60)')
   expect(gateBash(bash('irreversible', 0.59, 0.1), c).verdict).toBe(null)
-  expect(gateBash(bash('read_only', 0.99, 0.7), c).verdict).toBe('deny')
+  // destructive intent alone (deleting lines, uninstalling) passes; it only tips an irreversible answer
+  expect(gateBash(bash('reversible', 0.83, 0.96), c).verdict).toBe(null)
+  expect(gateBash(bash('irreversible', 0.4, 0.7), c).verdict).toBe('deny')
+  expect(gateBash(bash('irreversible', 0.4, 0.69), c).verdict).toBe(null)
   expect(gateBash(bash('reversible', 0.7, 0.3), c).verdict).toBe(null) // middling passes through (user-confirmed)
 })
 
@@ -73,6 +76,26 @@ test('text and status', () => {
   expect(statusText({ ...EMPTY_SESSION, calls: 4, lastRoute: '↓sonnet/low' }, 0)).toBe('jev ✓4 ↓sonnet/low')
 })
 
+test('a Jev deny the user asked for passes; a policy deny does not', () => {
+  const pc = { ...c, policies: 'never touch prod' }
+  const asked = (r: number) => nouls({ requested: r })
+  expect(gateBash({ ...bash('irreversible', 0.95, 0.9), ...asked(0.8) }, c).verdict).toBe(null)
+  expect(gateBash({ ...bash('irreversible', 0.95, 0.9), ...asked(0.8) }, c).reason).toContain('the user asked for it (0.80)')
+  expect(gateBash({ ...bash('irreversible', 0.95, 0.9), ...asked(0.79) }, c).verdict).toBe('deny')
+  expect(gateExfil({ ...nouls({ exfiltrates: 0.9 }), ...asked(0.9) }, c).verdict).toBe(null)
+  expect(gateWrite({ ...write('config', 0.9, 0.9), ...asked(0.9) }, c).verdict).toBe(null)
+  expect(gateBash({ ...bash('read_only', 0.9, 0), ...nouls({ violates_policy: 0.9, requested: 1 }) }, pc).verdict).toBe('deny')
+  expect(Object.keys(withPolicyQ(BASH_Q, c, 'delete that file'))).toContain('requested')
+  expect(Object.keys(withPolicyQ(BASH_Q, c, ' '))).not.toContain('requested')
+  expect(withPolicies({ a: 1 }, c, 'delete it')).toEqual({ a: 1, request: 'delete it' })
+})
+
+test('the done-check never blocks a turn that ran no tools', () => {
+  const done = nouls({ claimed_done: 0.99, verified: 0, asks_user: 0 })
+  expect(judgeStop(done, c).block).toBe(DONE_REASON)
+  expect(judgeStop(done, c, false).block).toBe(null)
+})
+
 test('exfil gate and policies', () => {
   const pc = { ...c, policies: 'no deploys; never touch prod' }
   expect(gateExfil(nouls({ exfiltrates: 0.7 }), c).verdict).toBe('deny')
@@ -80,7 +103,7 @@ test('exfil gate and policies', () => {
   expect(gateExfil(nouls({ exfiltrates: 0.1, violates_policy: 0.7 }), pc).reason).toContain('breaks a listed policy (0.70)')
   expect(gateBash({ ...bash('read_only', 0.9, 0), ...nouls({ violates_policy: 0.8 }) }, pc).reason).toContain('breaks a listed policy (0.80)')
   expect(gateWrite({ ...write('docs', 0.9, 0), ...nouls({ violates_policy: 0.69 }) }, pc).verdict).toBe(null)
-  expect(withPolicyQ(BASH_Q, c)).toBe(BASH_Q) // empty policies: v1's questions exactly
+  expect(withPolicyQ(BASH_Q, c)).toEqual(BASH_Q) // empty policies: v1's questions exactly
   expect(Object.keys(withPolicyQ(BASH_Q, pc))).toContain('violates_policy')
   expect(withPolicies({ a: 1 }, c)).toEqual({ a: 1 })
   expect(withPolicies({ a: 1 }, pc)).toEqual({ a: 1, policies: ['no deploys', 'never touch prod'] })

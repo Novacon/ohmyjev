@@ -58,12 +58,13 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 
 | Feature | What it does |
 |---|---|
-| **Bash gate** | Denies a command when Jev rates it irreversible at 0.6 or more, or destructive at 0.7 or more. |
+| **Bash gate** | Denies a command when Jev rates it irreversible at 0.6 or more. A command Jev calls irreversible with less confidence is denied too when it also aims to wipe something (0.7). A reversible command always passes, so deleting lines, dropping a co-author trailer or uninstalling a plugin goes through. |
 | **Write gate** | Denies writes outside the repo and `allowPaths`, and writes that contain a real credential. The repo means every worktree of the one the session started in, and every worktree of a repo the agent has moved into. The path check is plain code, not Jev, and it follows symlinks the way the OS does. |
 | **Exfil gate** | Denies a WebFetch or MCP call when Jev rates it 0.7 or more for sending your local data, files or credentials out. |
 | **Policies** | Every gate also checks the call against your own rules in the `policies` setting. |
+| **Your request** | Every gate also asks Jev whether your latest message asked for exactly this call. If it did (0.8), a gate's Jev deny lets the call through. So "delete the build folder" or "force push it" works, while the same command picked by the agent on its own is still denied. Policy and path denies always stand. |
 | **Injection screen** | When output from Bash, WebFetch, an MCP tool, or a Read outside the repo has instructions aimed at the model, it adds a note telling the model to treat that output as data. |
-| **Done-check** | If the agent says it's done but nothing shows it ran a check, it blocks the stop once and tells the agent to verify. |
+| **Done-check** | If the agent says it's done but nothing shows it ran a check, it blocks the stop once and tells the agent to verify. A turn that ran no tools is never blocked, since there was nothing to verify. |
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
@@ -193,13 +194,17 @@ Most of the time you won't notice it. Here's what it looks like when it does ste
 
 ### When a command gets blocked
 
-Claude gets the denial as the tool's result, along with an instruction not to work around it:
+Claude gets the denial as the tool's result, with an instruction not to work around it and a way out:
 
 ```
 ohmyjev blocked this: irreversible (0.95): nothing would restore what this removes or overwrites.
-This block is final. Do not try to work around it with another command, another tool, a different path,
-or an encoding that does the same thing. Stop and tell the user what was blocked and why.
+Do not try to work around it with another command, another tool, a different path, or an encoding that does
+the same thing. Tell the user what was blocked and why. If they reply asking for exactly this, in words that
+name it, run it again: their request then lets it through.
 ```
+
+So when the agent stops and tells you, answer with the action itself, for example "yes, delete ~/.agentmemory".
+A bare "yes" may not be enough, because the gate judges your latest message on its own.
 
 A write outside the repo gets a different message. It names the path and tells the model to ask you to add that
 directory to `allowPaths`, because that block is a setting, not a hazard.
@@ -314,7 +319,8 @@ Run `/omj settings` to see every setting's current value (the key stays hidden).
 | `logDecisions` | on | Shows each routing decision as a line in the transcript. |
 | `statusLine` | on | Pins ohmyjev's status under the prompt. |
 
-Each gate also has its own threshold setting. The defaults are the numbers in [What you get](#what-you-get).
+Each gate also has its own threshold setting, and `requested` (0.8) sets how sure Jev must be that you asked for a
+call. The defaults are the numbers in [What you get](#what-you-get).
 
 ## Logs
 
@@ -329,7 +335,7 @@ a fixed size:
 
 | What asks | What it sends |
 |---|---|
-| Bash gate | The command (up to 16000 characters), the working directory and the tool call's description |
+| Bash gate | The command (up to 16000 characters), the working directory, the tool call's description and your latest message (1500) |
 | Write gate | The file path and the new content (up to 16000 characters). Code denies writes outside the repo and `allowPaths` before it sends anything |
 | Exfil gate | The tool's name and its input (up to 4000 characters) |
 | Injection screen | The tool's output (up to 6000 characters), from Bash, WebFetch, MCP tools and Reads outside the repo |
@@ -337,7 +343,8 @@ a fixed size:
 | Router | The request (up to 1500 characters) |
 | `ask_jev` | The model's question, any text it passes (up to 20000 characters) and the repo files it names (8000 each, 80000 in total). It never sends files outside the repo |
 
-When you've set `policies`, every gate sends those too. Turning a feature off stops its calls.
+The write and exfil gates also send your latest message (1500), for the request check. When you've set `policies`,
+every gate sends those too. Turning a feature off stops its calls.
 
 With no key, nothing goes to Jev. The router's built-in classifier sends the request (up to 1500 characters) to
 Claude's own small model, over the same connection Claude Code already uses. In pi it goes to the cheapest model you

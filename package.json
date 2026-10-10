@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Guardrails for coding agents, decided by TypeSafe's Jev: blocks destructive commands, catches prompt injection, pushes back on an unverified done and routes effort per turn. For Claude Code, pi and omp.",
   "type": "module",
   "license": "MIT",
@@ -125,6 +125,11 @@
         "type": "number",
         "description": "Deny when Jev rates a call as sending local data out at least this probably (0-1)",
         "default": 0.7
+      },
+      "requested": {
+        "type": "number",
+        "description": "A gate's Jev deny passes when Jev rates your latest message as asking for exactly that call at least this probable (0-1). Policy and path denies always stand",
+        "default": 0.8
       },
       "askJev": {
         "type": "boolean",

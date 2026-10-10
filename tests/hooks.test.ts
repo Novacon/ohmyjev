@@ -528,3 +528,20 @@ test('/omj stats writes the dashboard from every log and opens it', async ($, on
   expect(html).not.toContain('ts-test')
   expect(fake.ran.some(a => a[0] === 'sh' && a[2]!.startsWith('open "$0"'))).toBe(true)
 })
+
+test('the user asking for the command lets an irreversible one through; the agent choosing it alone does not', async ($, on) => {
+  let asked = 0.95
+  const fake = harness(on, () => ({ ...bashAns('irreversible', 0.95, 0.9), ...nouls({ requested: asked }) }))
+  const t = tool(on)
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  await $.turn.start({ text: 'delete the old build directory', turnId: 't1' })
+  expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf build' })).deny).toBe(undefined)
+  const gate = fake.requests.find(r => r.body.state.command === 'rm -rf build')!
+  expect(gate.body.state.request).toBe('delete the old build directory')
+  expect(gate.body.questions).toHaveProperty('requested')
+  asked = 0.1
+  const r = await $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  expect(r.deny).toContain('irreversible')
+  expect(r.deny).toContain('run it again')
+  expect(t.ran).toBe(1)
+})

@@ -257,6 +257,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
     let pushedBackAt = -1
     let route: Route | undefined
     let liveRequest = ''
+    let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
     let compactPending = false
     let userThinking: ThinkingLevel = 'medium'
     let changingThinking = false
@@ -289,6 +290,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
       pushedBackAt = -1
       route = undefined
       liveRequest = ''
+      userRequest = ''
       compactPending = false
     }
     const setThinking = (level: ThinkingLevel): void => {
@@ -403,6 +405,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
 
     pi.on('before_agent_start', guarded<BeforeAgentStartEvent, void>(async (event, ctx) => {
       latestCtx = ctx
+      if (event.prompt.trim() && !/^\/\S+\s*$/.test(event.prompt.trim())) userRequest = event.prompt
       if (!c.enabled) return
       const text = event.prompt
       if (!text.trim()) return
@@ -433,8 +436,8 @@ export function createExtension(options: PiAdapterOptions = {}) {
       const input = event.input
       if ((tool === 'bash' || tool === 'powershell') && c.bashGate) {
         const command = arg(input, 'command')
-        const state = withPolicies({ command: clip(command, CLIP), cwd: ctx.cwd, ...(command.length > CLIP ? { truncated: true } : {}) }, c)
-        const d = await x.decide('tool.call', tool, state, withPolicyQ(BASH_Q, c))
+        const state = withPolicies({ command: clip(command, CLIP), cwd: ctx.cwd, ...(command.length > CLIP ? { truncated: true } : {}) }, c, userRequest)
+        const d = await x.decide('tool.call', tool, state, withPolicyQ(BASH_Q, c, userRequest))
         if (!d) return
         const judged = gateBash(d.answers, c)
         x.record(d, judged.verdict, judged.reason)
@@ -448,7 +451,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
           return { block: true, reason: pathDenyText(path) }
         }
         const content = tool === 'write' ? arg(input, 'content') : json(input.edits)
-        const d = await x.decide('tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c), withPolicyQ(WRITE_Q, c))
+        const d = await x.decide('tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c, userRequest), withPolicyQ(WRITE_Q, c, userRequest))
         if (!d) return
         const judged = gateWrite(d.answers, c)
         x.record(d, judged.verdict, judged.reason)
@@ -459,8 +462,8 @@ export function createExtension(options: PiAdapterOptions = {}) {
         const d = await x.decide(
           'tool.call',
           tool,
-          withPolicies({ tool, input: clip(json(input), 4000) }, c),
-          withPolicyQ(EXFIL_Q, c),
+          withPolicies({ tool, input: clip(json(input), 4000) }, c, userRequest),
+          withPolicyQ(EXFIL_Q, c, userRequest),
         )
         if (!d) return
         const judged = gateExfil(d.answers, c)
@@ -504,7 +507,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
       const questions = state.previous_requests.length ? { ...STOP_Q, ...SWITCHED_Q } : STOP_Q
       const d = await x.decide('Stop', '', state, questions)
       if (!d) return
-      const judged = judgeStop(d.answers, c)
+      const judged = judgeStop(d.answers, c, state.tools_this_turn.length > 0)
       const block = c.doneCheck ? judged.block : null
       if (block) pushedBackAt = count
       if (c.autoCompact && judged.wantsCompact) compactPending = true

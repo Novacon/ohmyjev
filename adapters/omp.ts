@@ -254,6 +254,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     let pushedBackAt = -1
     let route: Route | undefined
     let liveRequest = ''
+    let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
     let compactPending = false
     let classifiedPrompt: string | undefined
     let askRegistered = false
@@ -398,6 +399,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
       pushedBackAt = -1
       route = undefined
       liveRequest = ''
+      userRequest = ''
       compactPending = false
       classifiedPrompt = undefined
       status()
@@ -453,6 +455,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
       root = ''
       route = undefined
       liveRequest = ''
+      userRequest = ''
       compactPending = false
       classifiedPrompt = undefined
       pushedBackAt = -1
@@ -482,7 +485,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
             description: clip(description, 300),
             ...(command.length > CLIP ? { truncated: true } : {}),
           }
-          const d = await session.decide('tool_call', tool, withPolicies(state, c), withPolicyQ(BASH_Q, c))
+          const d = await session.decide('tool_call', tool, withPolicies(state, c, userRequest), withPolicyQ(BASH_Q, c, userRequest))
           if (!d) return
           const judged = gateBash(d.answers, c)
           session.record(d, judged.verdict, judged.reason)
@@ -505,8 +508,8 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
           const path = paths.join('; ')
           const d = await session.decide(
             'tool_call', tool,
-            withPolicies({ path, content: clip(writeContent(input), CLIP) }, c),
-            withPolicyQ(WRITE_Q, c),
+            withPolicies({ path, content: clip(writeContent(input), CLIP) }, c, userRequest),
+            withPolicyQ(WRITE_Q, c, userRequest),
           )
           if (!d) return
           const judged = gateWrite(d.answers, c)
@@ -517,8 +520,8 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
         if (c.exfilGate && exfilTool(tool, input)) {
           const d = await session.decide(
             'tool_call', tool,
-            withPolicies({ tool, input: clip(safeJson(input), 4000) }, c),
-            withPolicyQ(EXFIL_Q, c),
+            withPolicies({ tool, input: clip(safeJson(input), 4000) }, c, userRequest),
+            withPolicyQ(EXFIL_Q, c, userRequest),
           )
           if (!d) return
           const judged = gateExfil(d.answers, c)
@@ -591,7 +594,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
           scheduleCompact(ctx)
           return
         }
-        const judged = judgeStop(d.answers, c)
+        const judged = judgeStop(d.answers, c, state.tools_this_turn.length > 0)
         const block = c.doneCheck ? judged.block : null
         if (block) pushedBackAt = requests.length
         if (c.autoCompact && judged.wantsCompact) compactPending = true
@@ -609,6 +612,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
         if (ctx.agent.kind !== 'main' || !c.enabled) return
         userEffort = userThinking(ctx)
         const prompt = typeof rawEvent.prompt === 'string' ? rawEvent.prompt : ''
+        if (prompt.trim() && !/^\/\S+\s*$/.test(prompt.trim())) userRequest = prompt
         if (!prompt.trim()) return
         if (classifiedPrompt !== prompt) {
           classifiedPrompt = prompt
