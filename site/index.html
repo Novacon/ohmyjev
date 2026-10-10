@@ -14,8 +14,8 @@
 @font-face { font-family: "Space Grotesk"; src: url("fonts/SpaceGrotesk-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
 @font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 
-/* Layout: the NOVACON homepage. Full-screen slides over an ambient grid, the wordmark flies
-   from center stage into the header, fixed chrome in the corners. Content follows README.md.
+/* Layout: the NOVACON homepage. Full-screen slides over an ambient grid, the wordmark
+   sits at center stage on the first slide, fixed chrome in the corners. Content follows README.md.
    Every doc slide shares one frame: label + heading on the left, lede on the right, then a body
    whose panels stretch to equal heights, so the slides line up when you page through them. */
 :root {
@@ -63,15 +63,9 @@ code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
 
 #ambient { position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; opacity: .82; }
 
-/* header + flying wordmark */
-.header {
-  position: fixed; inset: calc(var(--block) + env(safe-area-inset-top, 0px)) var(--inline) auto; z-index: 20;
-  display: flex; align-items: flex-start; justify-content: space-between; pointer-events: none;
-}
-.header > * { pointer-events: auto; }
-.brand-target { display: block; height: 1px; }
+/* wordmark: centered over the quick start on the first slide, scrolls away with it */
 .brand {
-  position: fixed; top: 0; left: 0; z-index: 21; display: block; opacity: 0;
+  position: absolute; top: 0; left: 0; z-index: 21; display: block; opacity: 0;
   font: 800 30px/1 var(--logo); letter-spacing: -.01em; color: var(--paper); white-space: nowrap;
 }
 .ready .brand { opacity: 1; }
@@ -80,9 +74,9 @@ code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
 .glitch::before, .glitch::after { content: attr(data-text); position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .glitch::before { color: var(--link); }
 .glitch::after { color: var(--lavender); }
-.ready:not(.moving) .glitch { animation: glitch 3.4s step-end infinite; }
-.ready:not(.moving) .glitch::before { animation: glitch-a 3.4s step-end infinite; }
-.ready:not(.moving) .glitch::after { animation: glitch-b 3.4s step-end infinite; }
+.ready .glitch { animation: glitch 3.4s step-end infinite; }
+.ready .glitch::before { animation: glitch-a 3.4s step-end infinite; }
+.ready .glitch::after { animation: glitch-b 3.4s step-end infinite; }
 @keyframes glitch {
   0%, 69%, 73%, 91%, 95%, 100% { transform: none; opacity: 1; }
   70% { transform: translateX(-2px) skewX(-2deg); opacity: .76; }
@@ -130,12 +124,10 @@ code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
 .to-top span { color: var(--brand); }
 .to-top:hover { border-color: var(--brand); }
 
-/* content fades out under the fixed header and the bottom chrome */
-body::before, body::after { content: ""; position: fixed; left: 0; right: 0; z-index: 14; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
-/* solid down past the docked wordmark (and the notch, which the header also clears), then a short fade */
-body::before { top: 0; height: calc(env(safe-area-inset-top, 0px) + var(--block) + 56px); background: linear-gradient(var(--ground) calc(100% - 22px), rgba(10, 10, 10, 0)); }
+/* content fades out under the bottom chrome */
+body::after { content: ""; position: fixed; left: 0; right: 0; z-index: 14; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
 body::after { bottom: 0; height: calc(var(--block) + 52px); background: linear-gradient(rgba(10, 10, 10, 0), var(--ground) 55%); }
-.passed::before, .passed::after { opacity: 1; }
+.passed::after { opacity: 1; }
 
 /* side rail, after omp.sh: one square per slide, title pops out on hover */
 .rail {
@@ -392,7 +384,6 @@ td.on { color: var(--ok); }
   .doc-inner { min-height: 0; }
 }
 @media (max-width: 600px) {
-  .brand { font-size: 22px; }
   .slide { padding-top: calc(var(--block) + 56px); padding-bottom: 96px; }
   .g4, .g5 { grid-template-columns: 1fr; }
   .qs-row .where, .qs-n { display: none; }
@@ -423,9 +414,6 @@ td.on { color: var(--ok); }
 <body>
 <canvas id="ambient" aria-hidden="true"></canvas>
 
-<header class="header">
-  <span class="brand-target" id="brand-target" aria-hidden="true"></span>
-</header>
 <nav class="rail" id="rail" aria-label="Slides"></nav>
 <a href="#top" class="brand" id="brand" aria-label="ohmyjev home"><span class="glitch" data-text="&gt;_ohmyjev" aria-hidden="true"><span class="acc">&gt;_</span>ohmy<span class="acc">jev</span></span></a>
 
@@ -817,15 +805,14 @@ document.querySelectorAll('.scramble').forEach(el => el.addEventListener('mousee
   }, 20);
 }));
 
-// wordmark flies from center stage into the header over the first screen of scroll
-const brand = $('brand'), target = $('brand-target');
+// wordmark sits centered above the quick start; the bottom chrome shows once the first slide has scrolled by
+const brand = $('brand');
 let base = 30, w0 = 0, h0 = 0, quickH = 0, introFrame = 0;
 const quick = document.querySelector('.quick');
 function measure() {
   base = innerWidth <= 600 ? 22 : 30;
   brand.style.fontSize = base + 'px';
   w0 = brand.offsetWidth; h0 = brand.offsetHeight;
-  target.style.width = w0 + 'px'; target.style.height = h0 + 'px';
   quickH = quick.offsetHeight;
   const { quickY } = landing();
   quick.style.top = quickY + 'px';
@@ -841,15 +828,11 @@ function landing() {
 }
 function intro() {
   introFrame = 0;
-  const p = Math.min(Math.max(scrollY / Math.max(innerHeight, 1), 0), 1);
-  const m = still ? (p > 0 ? 1 : 0) : p * p * (3 - 2 * p);
+  const p = scrollY / Math.max(innerHeight, 1);
   const { s0, x0, y0 } = landing();
-  const scale = s0 + (1 - s0) * m;
-  const t = target.getBoundingClientRect();
-  brand.style.fontSize = base * scale + 'px';
-  brand.style.transform = `translate3d(${x0 + (t.left - x0) * m}px, ${y0 + (t.top - y0) * m}px, 0)`;
+  brand.style.fontSize = base * s0 + 'px';
+  brand.style.transform = `translate3d(${x0}px, ${y0}px, 0)`;
   document.body.classList.add('ready');
-  document.body.classList.toggle('moving', p > .015 && p < 1);
   document.body.classList.toggle('passed', still ? p > 0 : p >= .82);
 }
 const queueIntro = () => { introFrame ||= requestAnimationFrame(intro); };
