@@ -1,0 +1,23 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "site/index.html"
+        ],
+        "createdAt": "2026-10-10T16:36:26.741Z",
+        "reason": "model verified in screenshots: qs-rows cells pad 13px themselves, callout has clamp(14px..22px) padding"
+      },
+      {
+        "rule": "overused-font",
+        "value": "space grotesk",
+        "createdAt": "2026-10-10T16:45:45.549Z",
+        "reason": "user pinned Space Grotesk in their type spec this session"
+      }
+    ]
+  }
+}
