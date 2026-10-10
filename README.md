@@ -59,7 +59,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | Feature | What it does |
 |---|---|
 | **Bash gate** | Denies a command when Jev rates it irreversible at 0.6 or more, or destructive at 0.7 or more. |
-| **Write gate** | Denies writes outside the repo and `allowPaths`, and writes that contain a real credential. The repo is every worktree of the one the session started in, plus every worktree of whichever repo the agent has moved into. The path check is plain code, not Jev, and it follows symlinks the same way the OS does. |
+| **Write gate** | Denies writes outside the repo and `allowPaths`, and writes that contain a real credential. The repo means every worktree of the one the session started in, and every worktree of a repo the agent has moved into. The path check is plain code, not Jev, and it follows symlinks the way the OS does. |
 | **Exfil gate** | Denies a WebFetch or MCP call when Jev rates it 0.7 or more for sending your local data, files or credentials out. |
 | **Policies** | Every gate also checks the call against your own rules in the `policies` setting. |
 | **Injection screen** | When output from Bash, WebFetch, an MCP tool, or a Read outside the repo has instructions aimed at the model, it adds a note telling the model to treat that output as data. |
@@ -67,7 +67,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
-| **`/omj`** | Shows this session's Jev calls, errors, cost, median latency and denies, plus where the key comes from. It never prints the key itself. `/omj stats` opens a dashboard of every session in your browser. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
+| **`/omj`** | This session's Jev calls, errors, cost, median latency and denies, and where the key comes from. It never prints the key. `/omj stats` opens a dashboard of every session in your browser. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
 
 ### How a tool call goes through it
 
@@ -121,7 +121,7 @@ You've got three options, in the order ohmyjev looks for them:
 1. **The settings screen.** During the install, ohmyjev shows a screen with its options, including the TypeSafe
    key. Claude Code keeps it in secure storage, not in a settings file.
 2. **`TYPESAFE_API_KEY`** in your environment, for example in `~/.zshrc`.
-3. **`OPENROUTER_API_KEY`** in your environment. ohmyjev then calls Jev through OpenRouter as `~typesafe/omj-latest`.
+3. **`OPENROUTER_API_KEY`** in your environment. ohmyjev then calls Jev through OpenRouter as `~typesafe/jev-latest`.
 
 ### 4. Check it works
 
@@ -201,9 +201,13 @@ This block is final. Do not try to work around it with another command, another 
 or an encoding that does the same thing. Stop and tell the user what was blocked and why.
 ```
 
+A write outside the repo gets a different message. It names the path and tells the model to ask you to add that
+directory to `allowPaths`, because that block is a setting, not a hazard.
+
 ### `/omj`
 
-Run it any time to see what this session has been up to (`/ohmyjev` does the same). Here's an example:
+Run it any time for this session's numbers. `/ohmyjev` is the same command, and `/omj settings` lists every setting's
+value. An example:
 
 ```
 jev ✓23 ⛔1 ↑opus/high
@@ -224,7 +228,7 @@ never touch the prod cluster; no deploys on Friday; don't edit migrations that a
 
 ### `ask_jev`
 
-The model can call this tool on its own when it wants a quick judgment without reading a pile of files. For example:
+The model can call this tool on its own when it needs a judgment about files without reading them. For example:
 
 ```json
 {
@@ -249,21 +253,21 @@ said, then what the router did with it:
 [ohmyjev] main loop kept opus/medium, wanted opus/low (confidence 0.38)
 ```
 
-### `/omj stats`
-
-Writes every session's decisions into one page at `~/.ohmyjev/dashboard.html` and opens it: calls, denies, flags, cost
-and latency, a 30-day chart, a table per tool and per session, and the latest denies with their reasons. It's a plain
-file, read from the logs, so nothing on it leaves the machine (the page fetches its fonts from ohmyjev.xyz, and falls
-back to system fonts offline).
-
-### `/omj off`
-
-Turns every gate, screen, the done-check and the router off for this session, and the status shows `jev off`.
-`/omj on` brings them back. To start sessions off by default, turn off the `enabled` setting.
-
 The last line is the router declining to act: it wanted to spend less, but 0.38 is under the 0.6 it takes to move
 down. In a `claude -p` or SDK run the same lines arrive as `ui_log` messages and in the debug log. Turn them off with
 `logDecisions`.
+
+### `/omj stats`
+
+Builds one page from every session's log at `~/.ohmyjev/dashboard.html` and opens it in your browser. It has the
+totals, a 30-day chart of calls and denies, a table per tool and per session, and the latest denies with their reasons.
+It is a plain file built from the logs, so nothing on it leaves the machine. The page loads its fonts from ohmyjev.xyz
+and falls back to system fonts offline.
+
+### `/omj off`
+
+Turns every gate, the screen, the done-check and the router off for this session. The status shows `jev off`.
+`/omj on` brings them back. To start every session off, turn off the `enabled` setting.
 
 ### Status line
 
@@ -273,6 +277,7 @@ ohmyjev pins its status under the prompt, so there's nothing to set up:
 jev ✓23 ⛔1 ↑opus/high 🗜2     Jev calls, denies, this turn's route, auto-compactions
 jev ⚠ down                    Jev failed or timed out in the last 5 minutes, so the gates let calls through
 jev ⚠ no key                  no key configured
+jev off                       turned off with /omj off, or the enabled setting
 ```
 
 If you'd rather have it in your own statusline script, copy `jev_segment()` from
@@ -325,12 +330,12 @@ a fixed size:
 | What asks | What it sends |
 |---|---|
 | Bash gate | The command (up to 16000 characters), the working directory and the tool call's description |
-| Write gate | The file path and the new content (up to 16000 characters). Writes outside the repo and `allowPaths` are denied by code, before anything is sent |
+| Write gate | The file path and the new content (up to 16000 characters). Code denies writes outside the repo and `allowPaths` before it sends anything |
 | Exfil gate | The tool's name and its input (up to 4000 characters) |
 | Injection screen | The tool's output (up to 6000 characters), from Bash, WebFetch, MCP tools and Reads outside the repo |
 | Done-check | The current request (600), up to five earlier requests (200 each), up to 20 of this turn's tool calls with their input (200 each) and outcome, and Claude's last message (1500) |
 | Router | The request (up to 1500 characters) |
-| `ask_jev` | The model's question, any text it passes (up to 20000 characters) and the repo files it names (8000 each, 80000 in total). Files outside the repo are never sent |
+| `ask_jev` | The model's question, any text it passes (up to 20000 characters) and the repo files it names (8000 each, 80000 in total). It never sends files outside the repo |
 
 When you've set `policies`, every gate sends those too. Turning a feature off stops its calls.
 
