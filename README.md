@@ -58,11 +58,11 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 
 | Feature | What it does |
 |---|---|
-| **Bash gate** | Denies a command when Jev rates it irreversible at 0.6 or more. A command Jev calls irreversible with less confidence is denied too when it also aims to wipe something (0.7). A reversible command always passes, so deleting lines, dropping a co-author trailer or uninstalling a plugin goes through. |
+| **Bash gate** | Denies a command when Jev rates it irreversible at 0.6 or more, or when it sends local files or secrets to an outside host (0.7), such as `curl` uploading `~/.ssh`. A command Jev calls irreversible with less confidence is denied too when it also aims to wipe something (0.7). Reversible work always passes, so deleting lines, dropping a co-author trailer or uninstalling a plugin goes through. Plain reads like `ls`, `git status` or `grep` skip Jev entirely: plain code checks them, so they cost nothing and wait for nothing. |
 | **Write gate** | Denies writes outside the repo and `allowPaths`, and writes that contain a real credential. The repo means every worktree of the one the session started in, and every worktree of a repo the agent has moved into. The path check is plain code, not Jev, and it follows symlinks the way the OS does. |
 | **Exfil gate** | Denies a WebFetch or MCP call when Jev rates it 0.7 or more for sending your local data, files or credentials out. |
 | **Policies** | Every gate also checks the call against your own rules in the `policies` setting. |
-| **Your request** | Every gate also asks Jev whether your latest message asked for exactly this call. If it did (0.8), a gate's Jev deny lets the call through. So "delete the build folder" or "force push it" works, while the same command picked by the agent on its own is still denied. Policy and path denies always stand. |
+| **Your request** | Every gate also asks Jev whether your latest message asked for exactly this call. If it did (0.8), a gate's Jev deny lets the call through. So "delete the build folder" or "force push it" works, while the same command picked by the agent on its own is still denied. After a block, a plain "yes" works too: the gate shows Jev the call it just blocked next to your reply. Policy and path denies always stand. |
 | **Injection screen** | When output from Bash, WebFetch, an MCP tool, or a Read outside the repo has instructions aimed at the model, it adds a note telling the model to treat that output as data. |
 | **Done-check** | If the agent says it's done but nothing shows it ran a check, it blocks the stop once and tells the agent to verify. A turn that ran no tools is never blocked, since there was nothing to verify. |
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
@@ -199,12 +199,13 @@ Claude gets the denial as the tool's result, with an instruction not to work aro
 ```
 ohmyjev blocked this: irreversible (0.95): nothing would restore what this removes or overwrites.
 Do not try to work around it with another command, another tool, a different path, or an encoding that does
-the same thing. Tell the user what was blocked and why. If they reply asking for exactly this, in words that
-name it, run it again: their request then lets it through.
+the same thing. Tell the user what was blocked and why, and ask whether to run it anyway. If they say yes, run
+exactly this again: their reply then lets it through.
 ```
 
-So when the agent stops and tells you, answer with the action itself, for example "yes, delete ~/.agentmemory".
-A bare "yes" may not be enough, because the gate judges your latest message on its own.
+So when the agent stops and asks, answer "yes". The next gate shows Jev the blocked call next to your reply, so a
+yes confirms that call and nothing else. A yes with no block before it, "no", or a yes followed by a different
+command still gets denied.
 
 A write outside the repo gets a different message. It names the path and tells the model to ask you to add that
 directory to `allowPaths`, because that block is a setting, not a hazard.
@@ -335,7 +336,7 @@ a fixed size:
 
 | What asks | What it sends |
 |---|---|
-| Bash gate | The command (up to 16000 characters), the working directory, the tool call's description and your latest message (1500) |
+| Bash gate | The command (up to 16000 characters), the working directory, the tool call's description, your latest message (1500) and, right after a block, the blocked call (600). Plain reads send nothing |
 | Write gate | The file path and the new content (up to 16000 characters). Code denies writes outside the repo and `allowPaths` before it sends anything |
 | Exfil gate | The tool's name and its input (up to 4000 characters) |
 | Injection screen | The tool's output (up to 6000 characters), from Bash, WebFetch, MCP tools and Reads outside the repo |
@@ -386,6 +387,7 @@ git clone https://github.com/Novacon/ohmyjev && cd ohmyjev && bun install
 claude --plugin-dir "$PWD"                  # run your working copy, and it writes the API types to .claude-plugin/types
 omp -e ./adapters/omp.ts                    # or: pi -e ./adapters/pi.ts
 bun run test && bun run typecheck && claude plugin validate .
+bun tests/live.ts                           # 28 real commands against the live Jev, with the expected verdicts
 ```
 
 The decision logic lives in `hooks/policy.ts` and is pure, so you can test it with plain tables. `hooks/ohmyjev.ts`

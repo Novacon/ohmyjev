@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText,
+  TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead,
   OMJ_HELP, OMJ_OFF, OMJ_ON, settingsRows, toggleArg,
   keepInstructions, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
@@ -257,6 +257,8 @@ export function createExtension(options: PiAdapterOptions = {}) {
     let pushedBackAt = -1
     let route: Route | undefined
     let liveRequest = ''
+    let lastBlocked = '' // the call a gate denied this turn
+    let blockedBefore = '' // what was denied in the turn before this request: a "yes" confirms it
     let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
     let compactPending = false
     let userThinking: ThinkingLevel = 'medium'
@@ -291,6 +293,8 @@ export function createExtension(options: PiAdapterOptions = {}) {
       route = undefined
       liveRequest = ''
       userRequest = ''
+      lastBlocked = ''
+      blockedBefore = ''
       compactPending = false
     }
     const setThinking = (level: ThinkingLevel): void => {
@@ -405,7 +409,11 @@ export function createExtension(options: PiAdapterOptions = {}) {
 
     pi.on('before_agent_start', guarded<BeforeAgentStartEvent, void>(async (event, ctx) => {
       latestCtx = ctx
-      if (event.prompt.trim() && !/^\/\S+\s*$/.test(event.prompt.trim())) userRequest = event.prompt
+      if (event.prompt.trim() && !/^\/\S+\s*$/.test(event.prompt.trim())) {
+        userRequest = event.prompt
+        blockedBefore = lastBlocked
+        lastBlocked = ''
+      }
       if (!c.enabled) return
       const text = event.prompt
       if (!text.trim()) return
@@ -436,12 +444,16 @@ export function createExtension(options: PiAdapterOptions = {}) {
       const input = event.input
       if ((tool === 'bash' || tool === 'powershell') && c.bashGate) {
         const command = arg(input, 'command')
-        const state = withPolicies({ command: clip(command, CLIP), cwd: ctx.cwd, ...(command.length > CLIP ? { truncated: true } : {}) }, c, userRequest)
+        if (plainRead(command, c)) return // ls, git status, grep: code says read-only, no Jev call
+        const state = withPolicies({ command: clip(command, CLIP), cwd: ctx.cwd, ...(command.length > CLIP ? { truncated: true } : {}) }, c, userRequest, blockedBefore)
         const d = await x.decide('tool.call', tool, state, withPolicyQ(BASH_Q, c, userRequest))
         if (!d) return
         const judged = gateBash(d.answers, c)
         x.record(d, judged.verdict, judged.reason)
-        if (judged.verdict === 'deny') return { block: true, reason: denyText(judged.reason) }
+        if (judged.verdict === 'deny') {
+          lastBlocked = callSummary(tool, input)
+          return { block: true, reason: denyText(judged.reason) }
+        }
         return
       }
       if ((tool === 'write' || tool === 'edit') && c.writeGate) {
@@ -451,24 +463,30 @@ export function createExtension(options: PiAdapterOptions = {}) {
           return { block: true, reason: pathDenyText(path) }
         }
         const content = tool === 'write' ? arg(input, 'content') : json(input.edits)
-        const d = await x.decide('tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c, userRequest), withPolicyQ(WRITE_Q, c, userRequest))
+        const d = await x.decide('tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c, userRequest, blockedBefore), withPolicyQ(WRITE_Q, c, userRequest))
         if (!d) return
         const judged = gateWrite(d.answers, c)
         x.record(d, judged.verdict, judged.reason)
-        if (judged.verdict === 'deny') return { block: true, reason: denyText(judged.reason) }
+        if (judged.verdict === 'deny') {
+          lastBlocked = callSummary(tool, input)
+          return { block: true, reason: denyText(judged.reason) }
+        }
         return
       }
       if (tool.startsWith('mcp__') && c.exfilGate) {
         const d = await x.decide(
           'tool.call',
           tool,
-          withPolicies({ tool, input: clip(json(input), 4000) }, c, userRequest),
+          withPolicies({ tool, input: clip(json(input), 4000) }, c, userRequest, blockedBefore),
           withPolicyQ(EXFIL_Q, c, userRequest),
         )
         if (!d) return
         const judged = gateExfil(d.answers, c)
         x.record(d, judged.verdict, judged.reason)
-        if (judged.verdict === 'deny') return { block: true, reason: denyText(judged.reason) }
+        if (judged.verdict === 'deny') {
+          lastBlocked = callSummary(tool, input)
+          return { block: true, reason: denyText(judged.reason) }
+        }
       }
     }))
 

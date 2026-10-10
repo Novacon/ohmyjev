@@ -4,7 +4,7 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, DEFAULTS, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText,
+  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead,
   OMJ_HELP, OMJ_OFF, OMJ_ON, settingsRows, toggleArg,
   keepInstructions, modelOf, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
@@ -254,6 +254,8 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     let pushedBackAt = -1
     let route: Route | undefined
     let liveRequest = ''
+    let lastBlocked = '' // the call a gate denied this turn
+    let blockedBefore = '' // what was denied in the turn before this request: a "yes" confirms it
     let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
     let compactPending = false
     let classifiedPrompt: string | undefined
@@ -400,6 +402,8 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
       route = undefined
       liveRequest = ''
       userRequest = ''
+      lastBlocked = ''
+      blockedBefore = ''
       compactPending = false
       classifiedPrompt = undefined
       status()
@@ -456,6 +460,8 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
       route = undefined
       liveRequest = ''
       userRequest = ''
+      lastBlocked = ''
+      blockedBefore = ''
       compactPending = false
       classifiedPrompt = undefined
       pushedBackAt = -1
@@ -469,6 +475,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
         const tool = event.toolName
         const input = object(event.input)
         if ((tool === 'bash' || tool === 'eval' || githubWrite(tool, input)) && c.bashGate) {
+          if (tool === 'bash' && plainRead(string(input, 'command'), c)) return // code says read-only, no Jev call
           const command = tool === 'eval'
             ? string(input, 'code')
             : tool === 'github'
@@ -485,11 +492,14 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
             description: clip(description, 300),
             ...(command.length > CLIP ? { truncated: true } : {}),
           }
-          const d = await session.decide('tool_call', tool, withPolicies(state, c, userRequest), withPolicyQ(BASH_Q, c, userRequest))
+          const d = await session.decide('tool_call', tool, withPolicies(state, c, userRequest, blockedBefore), withPolicyQ(BASH_Q, c, userRequest))
           if (!d) return
           const judged = gateBash(d.answers, c)
           session.record(d, judged.verdict, judged.reason)
-          if (judged.verdict === 'deny') return { block: true, reason: denyText(judged.reason) }
+          if (judged.verdict === 'deny') {
+          lastBlocked = callSummary(tool, input)
+          return { block: true, reason: denyText(judged.reason) }
+        }
           return
         }
         if (WRITE_TOOLS[tool] && c.writeGate) {
@@ -508,25 +518,31 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
           const path = paths.join('; ')
           const d = await session.decide(
             'tool_call', tool,
-            withPolicies({ path, content: clip(writeContent(input), CLIP) }, c, userRequest),
+            withPolicies({ path, content: clip(writeContent(input), CLIP) }, c, userRequest, blockedBefore),
             withPolicyQ(WRITE_Q, c, userRequest),
           )
           if (!d) return
           const judged = gateWrite(d.answers, c)
           session.record(d, judged.verdict, judged.reason)
-          if (judged.verdict === 'deny') return { block: true, reason: denyText(judged.reason) }
+          if (judged.verdict === 'deny') {
+          lastBlocked = callSummary(tool, input)
+          return { block: true, reason: denyText(judged.reason) }
+        }
           return
         }
         if (c.exfilGate && exfilTool(tool, input)) {
           const d = await session.decide(
             'tool_call', tool,
-            withPolicies({ tool, input: clip(safeJson(input), 4000) }, c, userRequest),
+            withPolicies({ tool, input: clip(safeJson(input), 4000) }, c, userRequest, blockedBefore),
             withPolicyQ(EXFIL_Q, c, userRequest),
           )
           if (!d) return
           const judged = gateExfil(d.answers, c)
           session.record(d, judged.verdict, judged.reason)
-          if (judged.verdict === 'deny') return { block: true, reason: denyText(judged.reason) }
+          if (judged.verdict === 'deny') {
+          lastBlocked = callSummary(tool, input)
+          return { block: true, reason: denyText(judged.reason) }
+        }
         }
       } catch {
         return
@@ -612,7 +628,11 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
         if (ctx.agent.kind !== 'main' || !c.enabled) return
         userEffort = userThinking(ctx)
         const prompt = typeof rawEvent.prompt === 'string' ? rawEvent.prompt : ''
-        if (prompt.trim() && !/^\/\S+\s*$/.test(prompt.trim())) userRequest = prompt
+        if (prompt.trim() && !/^\/\S+\s*$/.test(prompt.trim())) {
+          userRequest = prompt
+          blockedBefore = lastBlocked
+          lastBlocked = ''
+        }
         if (!prompt.trim()) return
         if (classifiedPrompt !== prompt) {
           classifiedPrompt = prompt

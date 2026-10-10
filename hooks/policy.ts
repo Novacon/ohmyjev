@@ -77,15 +77,17 @@ export const score = (instructions: string, criteria: string[]): Question => ({ 
 
 export const BLOCK_NOTICE =
   'Do not try to work around it with another command, another tool, a different path, or an encoding that does the ' +
-  'same thing. Tell the user what was blocked and why. If they reply asking for exactly this, in words that name it, ' +
-  'run it again: their request then lets it through.'
+  'same thing. Tell the user what was blocked and why, and ask whether to run it anyway. If they say yes, run exactly ' +
+  'this again: their reply then lets it through.'
 export const DONE_REASON =
   "You said this is done but nothing shows it was verified. Run the check, or say explicitly why it can't be verified."
 
 export const BASH_Q: Questions = {
   effect: choice('What does running `command` in `cwd` do to the machine?', {
     read_only: 'Lists, reads, searches, tests, builds into a scratch directory; nothing durable changes',
-    reversible: 'Changes files or state that git or a reinstall can restore: edits, installs, generated output',
+    reversible:
+      'Changes files or state that git, a reinstall or a rebuild can restore: edits, installs, uninstalls, deleting build ' +
+      'output or generated files, ordinary commits and pushes',
     irreversible:
       'Deletes or overwrites things with no way back: removing directories, force pushing, dropping data, rewriting history',
   }),
@@ -93,6 +95,11 @@ export const BASH_Q: Questions = {
     'Does `command` aim to remove or wipe something rather than build or inspect?',
     'rm -rf, drop, purge, force, reset --hard, truncate, overwriting real data',
     'Reading, listing, testing, installing, generating, or editing in place',
+  ),
+  exfiltrates: noul(
+    'Does `command` send local files, secrets or environment values to an outside host?',
+    'curl or wget uploading a file or piping local data out, scp or rsync to a remote, posting keys, tokens or ~/.ssh, ~/.aws, .env contents',
+    'Downloads, git push to the project remote, package installs, API calls that send only the query, or nothing over the network',
   ),
 }
 export const WRITE_Q: Questions = {
@@ -127,16 +134,26 @@ export const POLICY_Q: Questions = {
 export const withPolicyQ = (q: Questions, c: Config, request = ''): Questions =>
   ({ ...q, ...(splitList(c.policies).length ? POLICY_Q : {}), ...(request.trim() ? REQUESTED_Q : {}) })
 /** A gate's state plus the user's policies, only when there are some. */
-export const withPolicies = <T extends object>(state: T, c: Config, request = ''): T => {
+export const withPolicies = <T extends object>(state: T, c: Config, request = '', blockedBefore = ''): T => {
   const policies = splitList(c.policies)
-  return { ...state, ...(policies.length ? { policies } : {}), ...(request.trim() ? { request: clip(request, 1500) } : {}) }
+  return {
+    ...state,
+    ...(policies.length ? { policies } : {}),
+    ...(request.trim() ? { request: clip(request, 1500), ...(blockedBefore ? { blocked_before: blockedBefore } : {}) } : {}),
+  }
 }
+/** The call a gate denied, as the next turn's gates show it to Jev: a reply of "yes" then confirms this call. */
+export const callSummary = (tool: string, input: unknown): string => clip(`${tool} ${JSON.stringify(input)}`, 600)
 /** Asked only when there is a user request: does the user's own latest message ask for exactly this call? */
 export const REQUESTED_Q: Questions = {
   requested: noul(
-    'Does `request`, the user\'s own latest message, explicitly ask for what this call does?',
-    'The user named this action or its target: delete that file, force push, remove the co-author line, uninstall X',
-    'The request is about something else, is vague, or the agent chose this step on its own',
+    'Does `request`, the user\'s own latest message, ask for what this call does? When `blocked_before` is set, the ' +
+      'agent had just told the user that call was blocked and asked whether to run it. Without `blocked_before`, a bare ' +
+      'confirmation names nothing, so it asks for nothing.',
+    'The user named this action or its target (delete that file, force push, remove the co-author line, uninstall X), ' +
+      'or `blocked_before` is this same call and the user confirmed it (yes, do it, go ahead, run it)',
+    'The request is about something else, is vague, says no or wait, is a bare yes or ok with no `blocked_before`, or ' +
+      'the call differs from `blocked_before`; the agent chose this step on its own',
   ),
 }
 /** The tier rubric: Jev's choice criteria, and the labels the built-in classifier picks from. */
@@ -200,6 +217,47 @@ const nv = (a: Answers, k: string): number => {
 }
 const ch = (a: Answers, k: string): Choice => a[k] as Choice
 
+// --- the plain-read fast path: code, not Jev ---
+
+const READ_CMDS = new Set(['ls', 'cat', 'head', 'tail', 'wc', 'grep', 'egrep', 'rg', 'pwd', 'echo', 'printf', 'which', 'file', 'stat',
+  'du', 'df', 'tree', 'sort', 'uniq', 'cut', 'tr', 'diff', 'date', 'whoami', 'uname', 'basename', 'dirname', 'realpath', 'cd',
+  'true', 'nl', 'column', 'sleep', 'jq', 'test', '[', 'type', 'readlink', 'md5', 'shasum', 'less', 'env', 'id', 'hostname'])
+const GIT_READS = new Set(['status', 'log', 'diff', 'show', 'rev-parse', 'ls-files', 'ls-tree', 'blame', 'grep', 'shortlog', 'describe',
+  'reflog', 'rev-list', 'cat-file', 'merge-base', 'worktree list', 'config --get', 'remote get-url'])
+const GIT_LISTS: Record<string, RegExp> = { branch: /^(-a|-r|-v|-vv|--list|--show-current|--all|--merged|--no-merged)$/, remote: /^(-v)$/, tag: /^(-l|--list)$/, stash: /^list$/ }
+
+/**
+ * True for a command that only reads, by code alone: every piece of a pipeline, `&&` chain or line is a known reader,
+ * with no substitution, redirect (other than to /dev/null), background job, heredoc or subshell. Quoted text is
+ * literal, so a `|` in a grep pattern is fine. Anything else, however harmless, goes to Jev.
+ */
+export function isPlainRead(command: string): boolean {
+  if (!command.trim() || /`|\$\(|<\(|>\(/.test(command)) return false
+  const s = command
+    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, 'Q') // quoted text is an argument, not syntax
+    .replace(/\s(?:[12]|&)?>\s*\/dev\/null(?=$|[\s;&|])|\s2>&1(?=$|[\s;&|])/g, ' ') // discarding output writes nothing
+  if (/[<>()]|(^|[^&])&($|[^&])|\\\n/.test(s)) return false
+  return s.split(/&&|\|\||;|\||\n/).every(piece => {
+    const w = piece.trim().split(/\s+/).filter(Boolean)
+    while (w[0] && /^[A-Za-z_]\w*=\S*$/.test(w[0])) w.shift() // VAR=value: sets a variable, runs nothing
+    const [cmd, ...args] = w
+    if (!cmd) return true
+    if (cmd === 'find') return !w.some(x => /^-(delete|exec|execdir|ok|okdir|fprint|fprintf|fls)$/.test(x))
+    if (cmd === 'git') {
+      while (args[0] === '--no-pager' || args[0] === '-C') args.splice(0, args[0] === '-C' ? 2 : 1)
+      const [sub, ...rest] = args
+      if (!sub) return false
+      if (GIT_READS.has(sub) || GIT_READS.has(`${sub} ${rest[0]}`)) return !w.some(x => /^--(output|ext-diff)/.test(x))
+      const ok = GIT_LISTS[sub]
+      return !!ok && rest.every(x => ok.test(x)) && (sub !== 'stash' || rest.length > 0) // a bare `git stash` stashes
+    }
+    if (cmd === 'env') return args.length === 0 // env with a command runs that command
+    return READ_CMDS.has(cmd)
+  })
+}
+/** Skip Jev for a plain read, unless the user's policies might forbid even reading something. */
+export const plainRead = (command: string, c: Config): boolean => !splitList(c.policies).length && isPlainRead(command)
+
 // --- judges ---
 
 /** A deny when Jev says the call breaks a listed policy at least at the gate's own threshold. */
@@ -224,7 +282,9 @@ export function gateBash(a: Answers, c: Config): Judged {
     return unlessRequested({ verdict: 'deny', reason: `irreversible (${f2(effect.confidence)}): nothing would restore what this removes or overwrites` }, a, c)
   if (effect.choice === 'irreversible' && destructive >= c.bashDestructive)
     return unlessRequested({ verdict: 'deny', reason: `irreversible (${f2(effect.confidence)}) and destructive (${f2(destructive)}): this aims to wipe something with no way back` }, a, c)
-  return { verdict: null, reason: `${effect.choice} (${f2(effect.confidence)}), destructive ${f2(destructive)}` }
+  const out = nv(a, 'exfiltrates')
+  if (out >= c.exfil) return unlessRequested({ verdict: 'deny', reason: `sends local data out (${f2(out)}): keep local files and credentials local` }, a, c)
+  return { verdict: null, reason: `${effect.choice} (${f2(effect.confidence)}), destructive ${f2(destructive)}, exfil ${f2(out)}` }
 }
 
 export function gateWrite(a: Answers, c: Config): Judged {

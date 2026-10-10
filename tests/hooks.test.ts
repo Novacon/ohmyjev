@@ -197,12 +197,13 @@ test('a WebFetch that sends local data out is denied before it runs', async ($, 
 const PUSH = 'cd ~/Documents/novacon/website && git add index.html && git commit -m "x" && git push -q origin main && git push -q cpanel main'
 
 test('a bridged bash git push to configured remotes gets the bash gate, not the exfil gate', async ($, on) => {
-  // Jev's answer in the report was exfiltrates 0.90; the bash rubric calls a plain push reversible
-  const fake = harness(on, () => ({ ...bashAns('reversible', 0.8, 0.05), ...nouls({ exfiltrates: 0.9 }) }))
+  // the exfil gate's generic question said 0.90 in the report; the bash gate's own exfil rubric counts a push to the
+  // project remote as not sending data out (live Jev: 0.04)
+  const fake = harness(on, () => ({ ...bashAns('reversible', 0.8, 0.05), ...nouls({ exfiltrates: 0.04 }) }))
   const t = tool(on)
   expect((await $.tool.call({ tool: 'mcp__custom-tools__bash', command: PUSH })).deny).toBe(undefined)
   expect(t.ran).toBe(1)
-  expect(Object.keys(fake.requests[0]!.body.questions)).toEqual(['effect', 'destructive_intent'])
+  expect(Object.keys(fake.requests[0]!.body.questions)).toEqual(['effect', 'destructive_intent', 'exfiltrates'])
   expect(fake.requests[0]?.body.state.command).toBe(PUSH)
 })
 
@@ -542,6 +543,32 @@ test('the user asking for the command lets an irreversible one through; the agen
   asked = 0.1
   const r = await $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
   expect(r.deny).toContain('irreversible')
-  expect(r.deny).toContain('run it again')
+  expect(r.deny).toContain('run exactly this again')
   expect(t.ran).toBe(1)
+})
+
+test('a plain read skips the Jev gate; its output is still screened', async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9))
+  const t = tool(on)
+  expect((await $.tool.call({ tool: 'Bash', command: 'git status --short && ls -la | head' })).deny).toBe(undefined)
+  expect(t.ran).toBe(1)
+  expect(fake.requests.map(r => Object.keys(r.body.questions))).toEqual([['injection']])
+})
+
+test('after a block, a bare "yes" reaches Jev with the blocked call beside it', async ($, on) => {
+  let asked = 0
+  const fake = harness(on, () => ({ ...bashAns('irreversible', 0.95, 0.9), ...nouls({ requested: asked }) }))
+  tool(on)
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  await $.turn.start({ text: 'clean up the old memory plugin', turnId: 't1' })
+  expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf ~/.agentmemory' })).deny).toContain('ask whether to run it anyway')
+  asked = 0.97
+  await $.turn.start({ text: 'yes', turnId: 't2' })
+  expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf ~/.agentmemory' })).deny).toBe(undefined)
+  const gate = fake.requests.filter(r => r.body.state.command === 'rm -rf ~/.agentmemory').at(-1)!
+  expect(gate.body.state.request).toBe('yes')
+  expect(gate.body.state.blocked_before).toContain('rm -rf ~/.agentmemory')
+  await $.turn.start({ text: 'now tidy the readme', turnId: 't3' })
+  await $.tool.call({ tool: 'Bash', command: 'rm -rf ~/.agentmemory' })
+  expect(fake.requests.filter(r => r.body.state.command === 'rm -rf ~/.agentmemory').at(-1)!.body.state.blocked_before).toBe(undefined)
 })

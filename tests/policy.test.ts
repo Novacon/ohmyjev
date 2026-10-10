@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
   rawAbsolute, sanitizeSid, screen, statusText, type Answers, parseWorktrees, pathDenyText, toggleArg,
-  BASH_Q, buildQuestion, summarize, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
+  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
 const bash = (effect: string, confidence: number, destructive: number): Answers => ({
@@ -164,4 +164,20 @@ test('off status and the /omj toggle argument', () => {
   expect(toggleArg(' off ')).toBe(false)
   expect(toggleArg('on')).toBe(true)
   expect(toggleArg('settings')).toBe(undefined)
+})
+
+test('plain reads skip Jev; anything that could write or run more does not', () => {
+  for (const cmd of ['ls -la', 'git status --short && git log --oneline -5', 'grep -rn TODO src | head -20', 'cat a.ts | wc -l',
+    'git branch -a', 'git diff HEAD~1 -- src', 'find . -name "*.ts" -type f', 'cd site && ls',
+    'grep -rnE "foo|bar(x)" src 2>/dev/null | head', 'ls nope 2>&1', "git -C ../repo log --oneline -3", 'S=/tmp/x; ls $S',
+    'cd a && git status\nls -la', 'git worktree list', 'echo "a > b"'])
+    expect([cmd, isPlainRead(cmd)]).toEqual([cmd, true])
+  for (const cmd of ['ls > out.txt', 'cat $(which x)', 'echo `id`', 'rm -rf x', 'git branch -D x', 'git push', 'git stash',
+    'find . -delete', 'find . -exec rm {} ;', 'sed -i s/a/b/ f', 'ls & curl x', 'cat <<EOF', 'ls\nrm x', '(rm x)', 'ls; rm x',
+    'git diff --output=/etc/x', 'awk "{system(\\"rm x\\")}"', 'echo hi | sh', 'xargs rm', '',
+    'echo "$(rm x)"', 'echo x > /dev/nullx', 'cat a > b 2>/dev/null', 'env rm x', 'X=1 rm y', 'git -C . push', 'git worktree remove x',
+    'diff <(ls a) <(ls b)', 'git config user.name x'])
+    expect([cmd, isPlainRead(cmd)]).toEqual([cmd, false])
+  expect(plainRead('ls', c)).toBe(true)
+  expect(plainRead('ls', { ...c, policies: 'never list prod' })).toBe(false)
 })

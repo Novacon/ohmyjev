@@ -160,10 +160,12 @@ describe('Pi tool policy', () => {
       ? {
           effect: { type: 'choice', choice: 'irreversible', confidence: 0.95 },
           destructive_intent: { type: 'noul', noul: 0 },
+          exfiltrates: { type: 'noul', noul: 0 },
         }
       : {
           effect: { type: 'choice', choice: 'read_only', confidence: 0.99 },
           destructive_intent: { type: 'noul', noul: 0 },
+          exfiltrates: { type: 'noul', noul: 0 },
         })
     const { pi, ctx } = await startedPi({
       apiKey: 'test-key', routeEffort: false, routeSubagents: false, routeMainModel: false,
@@ -181,7 +183,7 @@ describe('Pi tool policy', () => {
     const deniedReason = denied && typeof denied === 'object' && 'reason' in denied ? denied.reason : undefined
     expect(deniedReason).toContain('ohmyjev blocked this')
     expect(passed).toBeUndefined()
-    expect(call).toBe(2)
+    expect(call).toBe(1) // git status is a plain read: code passes it, no Jev call
   })
 
   test('a failing shell result is still screened and preserves structured content', async () => {

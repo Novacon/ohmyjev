@@ -26,7 +26,7 @@ afterAll(() => rm(base, { recursive: true, force: true }))
 const c = readConfig({ allowPaths: '' })
 const env = () => ({ HOME: home, TYPESAFE_API_KEY: 'ts-test' })
 const reply = (answers: unknown) => new Response(JSON.stringify({ answers, usage: { input_tokens: 10 } }))
-const bash = { effect: { type: 'choice', choice: 'read_only', confidence: 0.9 }, destructive_intent: { type: 'noul', noul: 0 } }
+const bash = { effect: { type: 'choice', choice: 'read_only', confidence: 0.9 }, destructive_intent: { type: 'noul', noul: 0 }, exfiltrates: { type: 'noul', noul: 0 } }
 
 test('a write through a link out of the repo, or a dangling link, is not allowed; a repo file is', async () => {
   expect(await pathAllowed('src/a.ts', repo, repo, c, env())).toBe(true)

@@ -9,8 +9,8 @@ import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
-  sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, settingsRows, toggleArg,
-  type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
+  callSummary, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, settingsRows, toggleArg,
+  type Config, type Judged, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
 type $ = EngineInterface
@@ -145,6 +145,8 @@ let c: Config = readConfig({})
 let ctx: Ctx | undefined
 let pushedBackAt = -1 // request count when the done-check last pushed back: once per request
 let route: Route | undefined // this turn's classification; undefined routes nothing
+let lastBlocked = '' // the call a gate denied this turn
+let blockedBefore = '' // what was denied in the turn before this request: a "yes" confirms it
 let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
 let liveRequest = '' // the latest request the Stop hook saw: what any compaction must keep
 let compactPending = false // a task switch at a boundary, waiting for the context to fill past compactMinPercent
@@ -243,18 +245,26 @@ async function pathAllowed($: $, path: string, cwd: string, withAllowPaths = tru
 
 // --- gates (before the tool runs) ---
 
+/** A Jev verdict as the deny text, remembering the denied call so the user's next "yes" can confirm it. */
+function blocked(j: Judged, tool: string, input: unknown): string | undefined {
+  if (j.verdict !== 'deny') return undefined
+  lastBlocked = callSummary(tool, input)
+  return denyText(j.reason)
+}
+
 async function gate($: $, e: { tool: string }): Promise<string | undefined> {
   const tool = String(e.tool)
   const kind = kindOf(tool)
   const cwd = await $.session.cwd()
   if (kind === 'Bash' && c.bashGate) {
     const command = arg(e, 'command')
+    if (plainRead(command, c)) return undefined // ls, git status, grep: code says read-only, no Jev call
     const state = { command: clip(command, CLIP), cwd, description: clip(arg(e, 'description'), 300), ...(command.length > CLIP ? { truncated: true } : {}) }
-    const d = await decide($, 'tool.call', tool, withPolicies(state, c, userRequest), withPolicyQ(BASH_Q, c, userRequest))
+    const d = await decide($, 'tool.call', tool, withPolicies(state, c, userRequest, blockedBefore), withPolicyQ(BASH_Q, c, userRequest))
     if (!d) return undefined
     const j = gateBash(d.answers, c)
     record($, d, j.verdict, j.reason)
-    return j.verdict === 'deny' ? denyText(j.reason) : undefined
+    return blocked(j, tool, e)
   }
   if (WRITE_TOOLS.includes(kind) && c.writeGate) {
     const path = pathOf(e)
@@ -268,20 +278,20 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
     }
     const edits = (e as { edits?: unknown }).edits
     const content = arg(e, 'content') || arg(e, 'new_string') || arg(e, 'new_source') || (Array.isArray(edits) ? JSON.stringify(edits) : '')
-    const d = await decide($, 'tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c, userRequest), withPolicyQ(WRITE_Q, c, userRequest))
+    const d = await decide($, 'tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c, userRequest, blockedBefore), withPolicyQ(WRITE_Q, c, userRequest))
     if (!d) return undefined
     const j = gateWrite(d.answers, c)
     record($, d, j.verdict, j.reason)
-    return j.verdict === 'deny' ? denyText(j.reason) : undefined
+    return blocked(j, tool, e)
   }
   if ((kind === 'WebFetch' || kind.startsWith('mcp__')) && c.exfilGate) {
     const { tool: _t, tool_use_id: _id, consent: _c, ...input } = e as Record<string, unknown>
-    const state = withPolicies({ tool, input: clip(JSON.stringify(input), 4000) }, c, userRequest)
+    const state = withPolicies({ tool, input: clip(JSON.stringify(input), 4000) }, c, userRequest, blockedBefore)
     const d = await decide($, 'tool.call', tool, state, withPolicyQ(EXFIL_Q, c, userRequest))
     if (!d) return undefined
     const j = gateExfil(d.answers, c)
     record($, d, j.verdict, j.reason)
-    return j.verdict === 'deny' ? denyText(j.reason) : undefined
+    return blocked(j, tool, e)
   }
   return undefined
 }
@@ -430,11 +440,17 @@ export const register: Register = (on, options) => {
   route = undefined
   liveRequest = ''
   userRequest = ''
+  lastBlocked = ''
+  blockedBefore = ''
   compactPending = false
   saidStepFor = ''
 
   on('turn.start', async ($, e, next) => {
-    if (e.text.trim() && !/^\/\S+\s*$/.test(e.text.trim())) userRequest = e.text
+    if (e.text.trim() && !/^\/\S+\s*$/.test(e.text.trim())) {
+      userRequest = e.text
+      blockedBefore = lastBlocked
+      lastBlocked = ''
+    }
     if (c.enabled) await classify($, e.text)
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -544,6 +560,8 @@ export const register: Register = (on, options) => {
     route = undefined
     liveRequest = ''
   userRequest = ''
+  lastBlocked = ''
+  blockedBefore = ''
     compactPending = false
     saidStepFor = ''
     return next(e)

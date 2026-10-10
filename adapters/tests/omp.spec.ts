@@ -48,6 +48,7 @@ const nouls = (values: Record<string, number>): Answers =>
 const bashAnswer = (effect: string, confidence: number, destructive: number): Answers => ({
   effect: { type: 'choice', choice: effect, confidence },
   destructive_intent: { type: 'noul', noul: destructive },
+  exfiltrates: { type: 'noul', noul: 0 },
 })
 const writeAnswer: Answers = {
   kind: { type: 'choice', choice: 'source_code', confidence: 0.9 },
