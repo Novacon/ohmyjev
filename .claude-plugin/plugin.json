@@ -26,6 +26,12 @@
       "description": "Model id sent to the TypeSafe endpoint",
       "default": "jev-1.13.0"
     },
+    "enabled": {
+      "type": "boolean",
+      "title": "ohmyjev on",
+      "description": "Off lets every call through. /omj off and /omj on change it for one session",
+      "default": true
+    },
     "bashGate": {
       "type": "boolean",
       "title": "Bash gate",

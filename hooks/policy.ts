@@ -8,6 +8,7 @@
 export const DEFAULTS = {
   apiKey: '',
   jevModel: 'jev-1.13.0',
+  enabled: true,
   bashGate: true,
   writeGate: true,
   injectionScreen: true,
@@ -407,7 +408,8 @@ export const isUnder = (target: string, root: string): boolean =>
 export type SessionState = { calls: number; denies: number; downUntil: number; noKey: boolean; lastRoute: string; compactions: number }
 export const EMPTY_SESSION: SessionState = { calls: 0, denies: 0, downUntil: 0, noKey: false, lastRoute: '', compactions: 0 }
 
-export function statusText(s: SessionState, now: number): string {
+export function statusText(s: SessionState, now: number, enabled = true): string {
+  if (!enabled) return 'jev off'
   if (s.noKey) return 'jev ⚠ no key'
   if (s.downUntil > now) return 'jev ⚠ down'
   return [`jev ✓${s.calls}`, s.denies ? `⛔${s.denies}` : '', s.lastRoute, s.compactions ? `🗜${s.compactions}` : ''].filter(Boolean).join(' ')
@@ -428,7 +430,16 @@ export type LogEntry = {
   costUsd?: number
 }
 
-// --- ask_jev and /jev ---
+// --- ask_jev, /omj and /ohmyjev ---
+
+export const OMJ_HELP = 'usage: /omj [settings|on|off]. /ohmyjev is the same command.'
+export const OMJ_OFF = 'ohmyjev off for this session: every call passes through. /omj on turns it back. The enabled setting is the default for new sessions.'
+export const OMJ_ON = 'ohmyjev on: gates, screens, done-check and router are back for this session.'
+/** `/omj on|off` as the new enabled value; undefined for any other argument. */
+export const toggleArg = (args: string): boolean | undefined => ({ on: true, off: false })[args.trim() as 'on' | 'off']
+/** /omj settings: every setting's current value, the key only as set or not. */
+export const settingsRows = (c: Config): string[] =>
+  Object.entries(c).map(([k, v]) => (k === 'apiKey' ? `apiKey: ${v ? 'set (hidden)' : 'not set'}` : `${k}: ${v === '' ? '(empty)' : String(v)}`))
 
 /** The model's ask_jev input as one Jev question, or the error text to hand back. */
 export function buildQuestion(i: { question?: unknown; type?: unknown; options?: unknown }): Question | string {

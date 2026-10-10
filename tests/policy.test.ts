@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
-  rawAbsolute, sanitizeSid, screen, statusText, type Answers, parseWorktrees, pathDenyText,
+  rawAbsolute, sanitizeSid, screen, statusText, type Answers, parseWorktrees, pathDenyText, toggleArg,
   BASH_Q, buildQuestion, summarize, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
@@ -134,4 +134,11 @@ test('worktree list parsing and the path deny text', () => {
   expect(pathDenyText('/etc/hosts')).toContain('/etc/hosts is outside the repo and allowPaths')
   expect(pathDenyText('/etc/hosts')).toContain('allowPaths setting')
   expect(pathDenyText('/etc/hosts')).not.toContain('This block is final')
+})
+
+test('off status and the /omj toggle argument', () => {
+  expect(statusText({ ...EMPTY_SESSION, calls: 3 }, 0, false)).toBe('jev off')
+  expect(toggleArg(' off ')).toBe(false)
+  expect(toggleArg('on')).toBe(true)
+  expect(toggleArg('settings')).toBe(undefined)
 })

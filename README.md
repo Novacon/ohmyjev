@@ -49,10 +49,10 @@ Then start Claude Code and run:
 
 ```
 /plugin install ohmyjev --marketplace Novacon/ohmyjev
-/jev
+/omj
 ```
 
-If `/jev` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you're set.
+If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you're set.
 
 ## What you get
 
@@ -67,7 +67,7 @@ If `/jev` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
-| **`/jev`** | Shows this session's Jev calls, errors, cost, median latency and denies, plus where the key comes from. It never prints the key itself. |
+| **`/omj`** | Shows this session's Jev calls, errors, cost, median latency and denies, plus where the key comes from. It never prints the key itself. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
 
 ### How a tool call goes through it
 
@@ -121,11 +121,11 @@ You've got three options, in the order ohmyjev looks for them:
 1. **The settings screen.** During the install, ohmyjev shows a screen with its options, including the TypeSafe
    key. Claude Code keeps it in secure storage, not in a settings file.
 2. **`TYPESAFE_API_KEY`** in your environment, for example in `~/.zshrc`.
-3. **`OPENROUTER_API_KEY`** in your environment. ohmyjev then calls Jev through OpenRouter as `~typesafe/jev-latest`.
+3. **`OPENROUTER_API_KEY`** in your environment. ohmyjev then calls Jev through OpenRouter as `~typesafe/omj-latest`.
 
 ### 4. Check it works
 
-Start a session and run `/jev`. The last line tells you where the key came from:
+Start a session and run `/omj`. The last line tells you where the key came from:
 
 ```
 key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0
@@ -138,7 +138,7 @@ Code's built-in classifier (up only), and the status under the prompt shows `jev
 
 The same checks run in [pi](https://pi.dev) and [omp](https://github.com/can1357/oh-my-pi) as a native extension.
 They share the decision logic and the key lookup (`TYPESAFE_API_KEY`, then `OPENROUTER_API_KEY`) with the Claude Code
-plugin, and write to the same `~/.ohmyjev` logs, so `/jev` and the statusline segment work the same way.
+plugin, and write to the same `~/.ohmyjev` logs, so `/omj` and the statusline segment work the same way.
 
 ### omp
 
@@ -201,9 +201,9 @@ This block is final. Do not try to work around it with another command, another 
 or an encoding that does the same thing. Stop and tell the user what was blocked and why.
 ```
 
-### `/jev`
+### `/omj`
 
-Run it any time to see what this session has been up to. Here's an example:
+Run it any time to see what this session has been up to (`/ohmyjev` does the same). Here's an example:
 
 ```
 jev ✓23 ⛔1 ↑opus/high
@@ -249,6 +249,11 @@ said, then what the router did with it:
 [ohmyjev] main loop kept opus/medium, wanted opus/low (confidence 0.38)
 ```
 
+### `/omj off`
+
+Turns every gate, screen, the done-check and the router off for this session, and the status shows `jev off`.
+`/omj on` brings them back. To start sessions off by default, turn off the `enabled` setting.
+
 The last line is the router declining to act: it wanted to spend less, but 0.38 is under the 0.6 it takes to move
 down. In a `claude -p` or SDK run the same lines arrive as `ui_log` messages and in the debug log. Turn them off with
 `logDecisions`.
@@ -275,11 +280,12 @@ if jev:
 
 ## Settings
 
-Run `/jev settings` to see every setting's current value (the key stays hidden). To change them, run
+Run `/omj settings` to see every setting's current value (the key stays hidden). To change them, run
 `/plugin configure ohmyjev@ohmyjev` inside Claude Code, then `/reload-plugins`.
 
 | Setting | Default | What it changes |
 |---|---|---|
+| `enabled` | on | The whole mod. Off lets every call through; `/omj on` and `/omj off` change it for one session. |
 | `bashGate`, `writeGate`, `exfilGate` | on | Turns each gate on or off. |
 | `injectionScreen`, `screenReads` | on | Screens tool output, including Reads from outside the repo. |
 | `doneCheck` | on | Pushes back on an unverified "done". |
@@ -344,9 +350,9 @@ pi remove npm:ohmyjev
 Claude Code, or enter the key with `/plugin configure ohmyjev@ohmyjev`.
 
 **The status says `jev ⚠ down`.** A Jev call failed or took longer than `timeoutMs` (1.5 s) in the last 5 minutes. The
-gates let calls through until Jev answers again. `/jev` shows the error count.
+gates let calls through until Jev answers again. `/omj` shows the error count.
 
-**Something got blocked that shouldn't have.** `/jev` shows the reason and Jev's numbers. Raise that gate's threshold
+**Something got blocked that shouldn't have.** `/omj` shows the reason and Jev's numbers. Raise that gate's threshold
 with `/plugin configure ohmyjev@ohmyjev`, or turn the gate off. Local MCP tools sometimes trip the exfil gate, and `exfilGate` is the switch for
 that.
 

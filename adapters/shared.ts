@@ -145,17 +145,17 @@ export class Session {
     this.save()
   }
 
-  status(now = Date.now()): string {
-    return statusText(keyOf(this.c, this.env) ? this.s : { ...this.s, noKey: true }, now)
+  status(now = Date.now(), enabled = true): string {
+    return statusText(keyOf(this.c, this.env) ? this.s : { ...this.s, noKey: true }, now, enabled)
   }
 
-  /** /jev: this session's status and log summary, and where the key comes from (never the key). */
-  async report(): Promise<string> {
+  /** /omj: this session's status and log summary, and where the key comes from (never the key). */
+  async report(enabled = true): Promise<string> {
     await this.ready
     const log = await readFile(this.logPath, 'utf8').catch(() => '')
     const k = keyOf(this.c, this.env)
     return [
-      statusText(this.s, Date.now()),
+      statusText(this.s, Date.now(), enabled),
       summarize(log),
       `key: ${k ? `${k.source} · ${k.provider} · ${k.model}` : 'none (set TYPESAFE_API_KEY or the apiKey setting)'}`,
     ].join('\n')

@@ -8,7 +8,7 @@ import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
-  sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS,
+  sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, OMJ_HELP, OMJ_OFF, OMJ_ON, settingsRows, toggleArg,
   type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -118,7 +118,7 @@ function writeSession($: $, p: Paths, s: SessionState): void {
 function showStatus($: $, s: SessionState): void {
   if (!c.statusLine) return
   try {
-    $.ui.status(statusText(s, Date.now()))
+    $.ui.status(statusText(s, Date.now(), c.enabled))
   } catch {
     // a surface with no status line: the statusline file still has it
   }
@@ -349,23 +349,33 @@ async function answerAsk($: $, e: Record<string, unknown>): Promise<ToolCallResu
   return reply(d.answers.answer)
 }
 
-/** /jev: this session's status and log summary, and where the key comes from (never the key). */
+/** /omj: this session's status and log summary, and where the key comes from (never the key). */
 async function jevReport($: $): Promise<string> {
   const x = await session($)
   const log = await $.fs.read(x.p.log).catch(() => '')
   const k = await keyOf($, c)
   return [
-    statusText(x.s, Date.now()),
+    statusText(x.s, Date.now(), c.enabled),
     summarize(typeof log === 'string' ? log : ''),
     `key: ${k ? `${k.source} · ${k.provider} · ${k.model}` : 'none (set TYPESAFE_API_KEY or the apiKey setting)'}`,
   ].join('\n')
 }
 
-/** /jev settings: every setting's current value, the key only as set or not. */
-function settingsReport(): string {
-  const rows = Object.entries(c).map(([k, v]) =>
-    k === 'apiKey' ? `apiKey: ${v ? 'set (hidden)' : 'not set'}` : `${k}: ${v === '' ? '(empty)' : String(v)}`)
-  return [...rows, '', 'Edit with /plugin configure ohmyjev@ohmyjev, then /reload-plugins.'].join('\n')
+/** /omj and /ohmyjev: the report, `settings`, or `on`/`off` for this session (the enabled setting is the default). */
+async function runCommand($: $, args: string): Promise<string> {
+  const a = args.trim()
+  if (a === 'settings') return [...settingsRows(c), '', 'Edit with /plugin configure ohmyjev@ohmyjev, then /reload-plugins.'].join('\n')
+  const enabled = toggleArg(a)
+  if (enabled !== undefined) {
+    c = { ...c, enabled }
+    if (!enabled) {
+      route = undefined
+      compactPending = false
+    }
+    showStatus($, (await session($)).s)
+    return enabled ? OMJ_ON : OMJ_OFF
+  }
+  return a ? OMJ_HELP : jevReport($)
 }
 
 // --- router: classify once per turn, then steer effort (main loop) and the subagent model ---
@@ -409,7 +419,7 @@ export const register: Register = (on, options) => {
   saidStepFor = ''
 
   on('turn.start', async ($, e, next) => {
-    await classify($, e.text)
+    if (c.enabled) await classify($, e.text)
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -434,24 +444,28 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
-    await $.command.register({ name: 'jev', description: "ohmyjev: this session's Jev calls, denies, cost and key source", argumentHint: '[settings]' }).catch(() => undefined)
+    for (const name of ['omj', 'ohmyjev'])
+      await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; on/off for this session", argumentHint: '[settings|on|off]' }).catch(() => undefined)
     const k = await keyOf($, c)
     say(
       $,
-      k
-        ? `ready: Jev via ${k.provider} (${k.model}, key from ${k.source})`
-        : `no Jev key: gates and screens let every call through${c.routeWithoutKey ? '; routing uses the built-in classifier, up only' : ''}. Set TYPESAFE_API_KEY or the apiKey setting.`,
+      !c.enabled
+        ? 'off (the enabled setting): every call passes through. /omj on turns it on for this session.'
+        : k
+          ? `ready: Jev via ${k.provider} (${k.model}, key from ${k.source})`
+          : `no Jev key: gates and screens let every call through${c.routeWithoutKey ? '; routing uses the built-in classifier, up only' : ''}. Set TYPESAFE_API_KEY or the apiKey setting.`,
     )
     const x = await session($)
     showStatus($, k ? x.s : { ...x.s, noKey: true })
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('command.run', { command: 'jev' }, async ($, e) =>
-    ({ text: e.args.trim() === 'settings' ? settingsReport() : await jevReport($) })).catch(($, e, next) => next(e))
+  for (const command of ['omj', 'ohmyjev'])
+    on('command.run', { command }, async ($, e) => ({ text: await runCommand($, e.args) })).catch(($, e, next) => next(e))
 
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
     if (e.tool === ASK) return answerAsk($, e as Record<string, unknown>)
+    if (!c.enabled) return next(e)
     const denied = await gate($, e)
     if (denied) return { deny: denied }
     return screenResult($, e, await next(e))
@@ -461,7 +475,7 @@ export const register: Register = (on, options) => {
 
   on('classic.Stop', async ($, e, next) => {
     const r = await next(e)
-    if (e.stop_hook_active || !(c.doneCheck || c.autoCompact)) return r
+    if (!c.enabled || e.stop_hook_active || !(c.doneCheck || c.autoCompact)) return r
     const msgs: SessionMessage[] = await $.session.messages()
     const isRequest = (m: SessionMessage) => m.role === 'user' && m.text.trim() !== ''
     const requests = msgs.filter(isRequest)
@@ -491,7 +505,7 @@ export const register: Register = (on, options) => {
   // --- auto-compact: after a turn, once the task switched and the context is full enough ---
 
   on('session.measure', async ($, e, next) => {
-    if (c.autoCompact && compactPending && (e.context.percent ?? 0) >= c.compactMinPercent) {
+    if (c.enabled && c.autoCompact && compactPending && (e.context.percent ?? 0) >= c.compactMinPercent) {
       compactPending = false
       const x = await session($)
       x.s.compactions++

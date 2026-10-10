@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, DEFAULTS, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText,
+  OMJ_HELP, OMJ_OFF, OMJ_ON, settingsRows, toggleArg,
   keepInstructions, modelOf, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
@@ -267,7 +268,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     const status = (): void => {
       try {
         if (!latestContext) return
-        latestContext.ui.setStatus('ohmyjev', c.statusLine && session ? session.status() : undefined)
+        latestContext.ui.setStatus('ohmyjev', c.statusLine && session ? session.status(Date.now(), c.enabled) : undefined)
       } catch {}
     }
 
@@ -460,7 +461,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     pi.on('tool_call', async (rawEvent, ctx) => {
       try {
         touch(ctx)
-        if (!session) return
+        if (!session || !c.enabled) return
         const event = rawEvent as ToolCall
         const tool = event.toolName
         const input = object(event.input)
@@ -532,7 +533,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     pi.on('tool_result', async (rawEvent, ctx) => {
       try {
         touch(ctx)
-        if (!session || !c.injectionScreen) return
+        if (!session || !c.enabled || !c.injectionScreen) return
         const event = rawEvent as ToolResult
         const tool = event.toolName
         const input = object(event.input)
@@ -559,6 +560,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
         touch(ctx)
         if (!session || ctx.agent.kind !== 'main') return
         restoreUserThinking(ctx)
+        if (!c.enabled) return
         if (!(c.doneCheck || c.autoCompact)) return
         const event = rawEvent as unknown as StopEvent
         if (event.stop_hook_active) {
@@ -604,7 +606,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     pi.on('before_agent_start', async (rawEvent, ctx) => {
       try {
         touch(ctx)
-        if (ctx.agent.kind !== 'main') return
+        if (ctx.agent.kind !== 'main' || !c.enabled) return
         userEffort = userThinking(ctx)
         const prompt = typeof rawEvent.prompt === 'string' ? rawEvent.prompt : ''
         if (!prompt.trim()) return
@@ -649,17 +651,29 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
       }
     })
 
-    pi.registerCommand('jev', {
-      description: "ohmyjev: this session's Jev calls, denies, cost and key source",
-      async handler(_args, ctx) {
-        try {
-          touch(ctx)
-          ctx.ui.notify(session ? await session.report() : 'ohmyjev: no active session', 'info')
-        } catch {
-          try { ctx.ui.notify('ohmyjev: report unavailable', 'error') } catch {}
-        }
-      },
-    })
+    /** /omj and /ohmyjev: the report, `settings`, or `on`/`off` for this session (the enabled setting is the default). */
+    const command = async (args: string, ctx: HostContext): Promise<void> => {
+      try {
+        touch(ctx)
+        const a = args.trim()
+        const enabled = toggleArg(a)
+        if (enabled !== undefined) {
+          c = { ...c, enabled }
+          if (!enabled) {
+            route = undefined
+            compactPending = false
+          }
+          status()
+          ctx.ui.notify(enabled ? OMJ_ON : OMJ_OFF, 'info')
+        } else if (a === 'settings') ctx.ui.notify(settingsRows(c).join('\n'), 'info')
+        else if (a) ctx.ui.notify(OMJ_HELP, 'info')
+        else ctx.ui.notify(session ? await session.report(c.enabled) : 'ohmyjev: no active session', 'info')
+      } catch {
+        try { ctx.ui.notify('ohmyjev: report unavailable', 'error') } catch {}
+      }
+    }
+    for (const name of ['omj', 'ohmyjev'])
+      pi.registerCommand(name, { description: "ohmyjev: this session's Jev calls, denies, cost and key source; on/off for this session", handler: command })
   }
 }
 

@@ -148,7 +148,8 @@ describe('Pi settings', () => {
 
     expect(untrustedPi.tools.has('ask_jev')).toBeTrue()
     expect(trustedPi.tools.has('ask_jev')).toBeFalse()
-    expect(trustedPi.commands.has('jev')).toBeTrue()
+    expect(trustedPi.commands.has('omj')).toBeTrue()
+    expect(trustedPi.commands.has('ohmyjev')).toBeTrue()
   })
 })
 

@@ -407,20 +407,20 @@ td:nth-child(2) { color: var(--warm); }
         <div class="qs-rows" data-agent="claude">
           <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/plugin install ohmyjev --marketplace Novacon/ohmyjev</code><span class="where lbl">claude code</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
-          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/jev</code><span class="where lbl">claude code</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/omj</code><span class="where lbl">claude code</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
         </div>
         <div class="qs-rows" data-agent="omp" hidden>
           <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>omp plugin install ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
-          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/jev</code><span class="where lbl">omp</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/omj</code><span class="where lbl">omp</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
         </div>
         <div class="qs-rows" data-agent="pi" hidden>
           <div class="qs-row"><span class="qs-n">1</span><span class="qs-p" aria-hidden="true">$</span><code>export TYPESAFE_API_KEY=ts_...</code><span class="where lbl">shell profile</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
           <div class="qs-row"><span class="qs-n">2</span><span class="qs-p" aria-hidden="true">$</span><code>pi install npm:ohmyjev</code><span class="where lbl">shell</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
-          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/jev</code><span class="where lbl">pi</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
+          <div class="qs-row"><span class="qs-n">3</span><span class="qs-p" aria-hidden="true">&gt;</span><code>/omj</code><span class="where lbl">pi</span><button type="button" class="copy-btn" data-copy>Copy</button></div>
         </div>
       </div>
-      <p class="hint">If <code>/jev</code> ends with <code>key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</code>, you're set.</p>
+      <p class="hint">If <code>/omj</code> ends with <code>key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</code>, you're set.</p>
     </div>
   </section>
 
@@ -441,7 +441,7 @@ td:nth-child(2) { color: var(--warm); }
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind route">Route</span></div><h3>Router</h3><p>Sets effort and the subagent model from one Jev call per request. No key? Claude Code's own classifier steps in, routing up only.</p><p class="cfg">routeEffort, routeSubagents</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind route">Route</span></div><h3>Auto-compact</h3><p>Task changed and context at least 40% full? It compacts, keeping the new request in full.</p><p class="cfg">autoCompact</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about repo files or text without loading them into its own context.</p><p class="cfg">askJev</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/jev</h3><p>This session's calls, errors, cost, median latency, denies and key source. Never prints the key.</p><p class="cfg">slash command</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/omj</h3><p>This session's calls, errors, cost, median latency, denies and key source. Never prints the key.</p><p class="cfg">slash command</p></div>
         </div>
       </div>
     </div>
@@ -514,20 +514,20 @@ This block is final. Do not try to work around it with another command, another 
             <ol>
               <li>The settings screen during install (kept in secure storage)</li>
               <li><code>TYPESAFE_API_KEY</code></li>
-              <li><code>OPENROUTER_API_KEY</code>, as <code>~typesafe/jev-latest</code></li>
+              <li><code>OPENROUTER_API_KEY</code>, as <code>~typesafe/omj-latest</code></li>
             </ol>
             <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>~/.zshrc</span><button type="button" class="copy" data-copy>Copy <span aria-hidden="true">→</span></button></div><pre>export TYPESAFE_API_KEY=ts_...</pre></div>
           </div>
           <div class="step">
             <p class="n">STEP 4</p><h4>Check it works</h4>
-            <p>Run <code>/jev</code>. The last line says where the key came from. With <code>key: none</code> every gate stays open and routing falls back to Claude Code's own classifier.</p>
-            <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>/jev, last line</span></div><pre>key: env TYPESAFE_API_KEY · <span class="g">typesafe</span> · jev-1.13.0</pre></div>
+            <p>Run <code>/omj</code>. The last line says where the key came from. With <code>key: none</code> every gate stays open and routing falls back to Claude Code's own classifier.</p>
+            <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>/omj, last line</span></div><pre>key: env TYPESAFE_API_KEY · <span class="g">typesafe</span> · jev-1.13.0</pre></div>
           </div>
         </div>
         <div class="grid g4">
           <div class="fix"><h3>jev ⚠ no key</h3><p>Set <code>TYPESAFE_API_KEY</code> in the shell that starts Claude Code, or run <code>claude plugin configure ohmyjev@ohmyjev</code>.</p></div>
           <div class="fix"><h3>jev ⚠ down</h3><p>A Jev call failed or took over 1.5 s in the last 5 minutes. Gates let calls through until Jev answers again.</p></div>
-          <div class="fix"><h3>Blocked by mistake</h3><p><code>/jev</code> shows the reason. Raise that gate's threshold in <code>/config</code>, or turn it off. Local MCP tools can trip <code>exfilGate</code>.</p></div>
+          <div class="fix"><h3>Blocked by mistake</h3><p><code>/omj</code> shows the reason. Raise that gate's threshold in <code>/config</code>, or turn it off. Local MCP tools can trip <code>exfilGate</code>.</p></div>
           <div class="fix"><h3>Nothing happens</h3><p>Run <code>claude --debug</code>. A failing hook leaves a line naming it and the reason.</p></div>
         </div>
       </div>
@@ -537,14 +537,14 @@ This block is final. Do not try to work around it with another command, another 
   <section id="using" class="slide doc" data-title="In use">
     <div class="doc-inner">
       <div class="head reveal">
-        <p class="section-label lbl">04 / In use <span>/jev · ask_jev · statusline · policies</span></p><h2>in <em>use</em></h2>
-        <p class="lede">Most of the time you won't notice it. <code>/jev</code> and the statusline show what it's doing, <code>ask_jev</code> spares the model a pile of reads, and <code>policies</code> adds your own plain-English rules to every gate.</p>
+        <p class="section-label lbl">04 / In use <span>/omj · ask_jev · statusline · policies</span></p><h2>in <em>use</em></h2>
+        <p class="lede">Most of the time you won't notice it. <code>/omj</code> and the statusline show what it's doing, <code>ask_jev</code> spares the model a pile of reads, and <code>policies</code> adds your own plain-English rules to every gate.</p>
       </div>
       <div class="body reveal">
         <div class="grid g2">
           <div>
-            <div class="card-head"><h3>/jev</h3><span class="meta">this session, any time</span></div>
-            <div class="code grow"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>/jev</span></div><pre><span class="g">jev ✓23</span> <span class="o">⛔1</span> <span class="k">↑opus/high</span>
+            <div class="card-head"><h3>/omj</h3><span class="meta">this session, any time</span></div>
+            <div class="code grow"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>/omj</span></div><pre><span class="g">jev ✓23</span> <span class="o">⛔1</span> <span class="k">↑opus/high</span>
 calls 23 · errors 0 · cost $0.000966 · p50 310ms
 denies: Bash 1
   Bash: irreversible (0.95): nothing would restore what this removes or overwrites

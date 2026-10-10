@@ -436,13 +436,13 @@ test('ask_jev: bad input and Jev down come back as error JSON (Review Focus v2 #
   expect(JSON.parse(String(down.result)).error).toContain('jev unavailable')
 })
 
-test('/jev shows the session and the key source, never the key', async ($, on) => {
+test('/omj shows the session and the key source, never the key', async ($, on) => {
   const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9))
   tool(on)
   await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })
   await flush()
   fake.files['/home/u/.ohmyjev/log/test-session.jsonl'] = fake.logs.map(l => '\n' + JSON.stringify(l)).join('\n')
-  const r = await $.command.run({ command: 'jev', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
+  const r = await $.command.run({ command: 'omj', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
   expect(r.text).toContain('jev ✓1 ⛔1')
   expect(r.text).toContain('Bash: irreversible (0.95)')
   expect(r.text).toContain('key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0')
@@ -482,12 +482,34 @@ test('final review: only general-purpose subagents are routed; an agent with its
   expect((await $.agent.spawn(spawnArgs as never)).model).toBe('claude-opus-5-5')
 })
 
-test('/jev settings lists every setting with the key hidden', { options: { apiKey: 'sk-secret-123', policies: 'never touch prod' } }, async ($, on) => {
+test('/omj settings lists every setting with the key hidden', { options: { apiKey: 'sk-secret-123', policies: 'never touch prod' } }, async ($, on) => {
   harness(on, () => ({}))
-  const r = await $.command.run({ command: 'jev', args: 'settings', origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
+  const r = await $.command.run({ command: 'omj', args: 'settings', origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
   expect(r.text).toContain('apiKey: set (hidden)')
   expect(r.text).toContain('policies: never touch prod')
   expect(r.text).toContain('bashIrreversible: 0.6')
   expect(r.text).toContain('/plugin configure ohmyjev@ohmyjev')
   expect(r.text).not.toContain('sk-secret-123')
+})
+
+test('/omj off lets everything through for the session; /ohmyjev on brings the gates back', async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9))
+  const t = tool(on)
+  const run = (command: string, args: string) => $.command.run({ command, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
+  expect((await run('omj', 'off')).text).toContain('off for this session')
+  expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })).deny).toBe(undefined)
+  expect(fake.requests.length).toBe(0)
+  expect((await run('omj', '')).text).toContain('jev off')
+  expect((await run('ohmyjev', 'on')).text).toContain('ohmyjev on')
+  expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })).deny).toContain('irreversible')
+  expect((await run('omj', 'bogus')).text).toContain('usage')
+  expect(t.ran).toBe(1)
+})
+
+test('enabled: false in the settings is off from the start', { options: { enabled: false } }, async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9))
+  tool(on)
+  expect((await $.tool.call({ tool: 'Write', file_path: '/etc/hosts', content: 'x' })).deny).toBe(undefined)
+  expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })).deny).toBe(undefined)
+  expect(fake.requests.length).toBe(0)
 })

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText,
+  OMJ_HELP, OMJ_OFF, OMJ_ON, settingsRows, toggleArg,
   keepInstructions, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
@@ -264,7 +265,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
     const status = (): void => {
       if (!c.statusLine || !session || !latestCtx) return
       try {
-        latestCtx.ui.setStatus('ohmyjev', session.status())
+        latestCtx.ui.setStatus('ohmyjev', session.status(Date.now(), c.enabled))
       } catch {}
     }
     const say = (ctx: PiContext, line: string): void => {
@@ -348,17 +349,27 @@ export function createExtension(options: PiAdapterOptions = {}) {
       askRegistered = true
     }
 
-    pi.registerCommand('jev', {
-      description: "ohmyjev: this session's Jev calls, denies, cost and key source",
-      handler: async (_args, ctx) => {
-        try {
-          const x = await ensureSession(ctx)
-          ctx.ui.notify(await x.report(), 'info')
-        } catch {
-          ctx.ui.notify('ohmyjev report unavailable', 'warning')
-        }
-      },
-    })
+    /** /omj and /ohmyjev: the report, `settings`, or `on`/`off` for this session (the enabled setting is the default). */
+    const command = async (args: string, ctx: PiContext): Promise<void> => {
+      try {
+        const x = await ensureSession(ctx)
+        const a = args.trim()
+        const enabled = toggleArg(a)
+        if (enabled !== undefined) {
+          c = { ...c, enabled }
+          if (!enabled) {
+            route = undefined
+            compactPending = false
+          }
+          status()
+          ctx.ui.notify(enabled ? OMJ_ON : OMJ_OFF, 'info')
+        } else ctx.ui.notify(a === 'settings' ? settingsRows(c).join('\n') : a ? OMJ_HELP : await x.report(c.enabled), 'info')
+      } catch {
+        ctx.ui.notify('ohmyjev report unavailable', 'warning')
+      }
+    }
+    for (const name of ['omj', 'ohmyjev'])
+      pi.registerCommand(name, { description: "ohmyjev: this session's Jev calls, denies, cost and key source; on/off for this session", handler: command })
 
     pi.on('session_start', guarded(async (_event, ctx) => {
       reset()
@@ -373,7 +384,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
           ? `ready: Jev via ${key.provider} (${key.model}, key from ${key.source})`
           : `no Jev key: gates and screens let every call through${c.routeWithoutKey ? '; routing uses Pi\'s cheapest available model classifier, up only' : ''}. Set TYPESAFE_API_KEY or the apiKey setting.`,
       )
-      ctx.ui.setStatus('ohmyjev', c.statusLine ? x.status() : undefined)
+      ctx.ui.setStatus('ohmyjev', c.statusLine ? x.status(Date.now(), c.enabled) : undefined)
     }))
 
     pi.on('thinking_level_select', guarded<ThinkingLevelSelectEvent, void>((event) => {
@@ -391,6 +402,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
 
     pi.on('before_agent_start', guarded<BeforeAgentStartEvent, void>(async (event, ctx) => {
       latestCtx = ctx
+      if (!c.enabled) return
       const text = event.prompt
       if (!text.trim()) return
       restoreThinking()
@@ -414,6 +426,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
 
     pi.on('tool_call', guarded<ToolCallEvent, { block: true; reason: string }>(async (event, ctx) => {
       latestCtx = ctx
+      if (!c.enabled) return
       const x = await ensureSession(ctx)
       const tool = event.toolName
       const input = event.input
@@ -457,6 +470,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
 
     pi.on('tool_result', guarded<ToolResultEvent, { content: Content[]; structuredContent?: unknown }>(async (event, ctx) => {
       latestCtx = ctx
+      if (!c.enabled) return
       const tool = event.toolName
       const shell = tool === 'bash' || tool === 'powershell'
       if (!c.injectionScreen || (event.isError && !shell)) return
@@ -481,7 +495,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
 
     pi.on('agent_before_settle', guarded<BoundaryEvent, { entries: Array<Record<string, unknown>>; continue: true }>(async (event, ctx) => {
       latestCtx = ctx
-      if (event.outcome !== 'completed' || event.continue || !event.context.canContinue || !(c.doneCheck || c.autoCompact)) return
+      if (!c.enabled || event.outcome !== 'completed' || event.continue || !event.context.canContinue || !(c.doneCheck || c.autoCompact)) return
       const { count, state } = messagesForStop(event.context.contextMessages)
       if (!count || count === pushedBackAt) return
       liveRequest = state.current_request

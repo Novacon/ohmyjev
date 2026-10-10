@@ -387,12 +387,13 @@ test('no key fails open rather than sending the full conversation to the current
   expect(sent).toBe(0)
 })
 
-test('ask_jev and /jev use host-native registration and display-only UI', async () => {
+test('ask_jev, /omj and /ohmyjev use host-native registration and display-only UI', async () => {
   const fake = fakeOmp(async () => response({ answer: { type: 'noul', noul: 0.8 } }))
   const ctx = await start(fake)
   expect(fake.tools.map(tool => tool.name)).toContain('ask_jev')
-  expect(fake.commands.has('jev')).toBe(true)
-  await fake.commands.get('jev')?.handler('', ctx)
+  expect(fake.commands.has('omj')).toBe(true)
+  expect(fake.commands.has('ohmyjev')).toBe(true)
+  await fake.commands.get('omj')?.handler('', ctx)
   expect(ctx.notifications.at(-1)).toContain('calls 0')
 })
 
