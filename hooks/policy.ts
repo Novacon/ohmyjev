@@ -373,6 +373,24 @@ export function expandRoot(p: string, home: string, tmpdir: string | undefined):
   return absolute(p, '/', home)
 }
 
+/**
+ * The local path a pi or omp file tool actually opens: a `file://` URL as a path, and the `@` and stray `:` prefixes
+ * both hosts drop. Null for any other `scheme://` target (omp's ssh:// writes to another machine): never a repo path.
+ */
+export function hostPath(p: string): string | null {
+  if (/^file:\/\//i.test(p)) {
+    // as node's fileURLToPath on POSIX: no host but localhost, no encoded `/`; a query or fragment is refused, not dropped
+    const path = /^file:\/\/(?:localhost)?(\/[^?#]*)$/i.exec(p)?.[1]
+    try {
+      return path === undefined || /%2f/i.test(path) ? null : decodeURIComponent(path)
+    } catch {
+      return null
+    }
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) return null
+  return /^@[/~]|^:[/~.]/.test(p) ? p.slice(1) : p
+}
+
 export const isUnder = (target: string, root: string): boolean =>
   target === root || target.startsWith(root.replace(/\/+$/, '') + '/')
 

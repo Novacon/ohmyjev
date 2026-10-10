@@ -5,10 +5,9 @@
  */
 import { execFile } from 'node:child_process'
 import { appendFile, chmod, lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from '../hooks/jev.ts'
 import {
-  EMPTY_SESSION, absolute, buildQuestion, clip, expandRoot, isUnder, normalize, rawAbsolute, sanitizeSid, splitList, statusText,
+  EMPTY_SESSION, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, rawAbsolute, sanitizeSid, splitList, statusText,
   summarize, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
 } from '../hooks/policy.ts'
 
@@ -194,21 +193,7 @@ async function place(p: string): Promise<string | null> {
   return cur || '/'
 }
 
-/**
- * The local path a pi or omp file tool actually opens: a `file://` URL as a path, and the `@` and stray `:` prefixes
- * both hosts drop. Null for any other `scheme://` target (omp's ssh:// writes to another machine): never a repo path.
- */
-export function hostPath(p: string): string | null {
-  if (/^file:\/\//i.test(p)) {
-    try {
-      return fileURLToPath(p)
-    } catch {
-      return null
-    }
-  }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) return null
-  return /^@[/~]|^:[/~.]/.test(p) ? p.slice(1) : p
-}
+export { hostPath }
 
 /**
  * Allowed only when the OS's reading (raw spelling) and a normalizing tool's reading (lexical) both land in a root:

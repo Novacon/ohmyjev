@@ -6,7 +6,7 @@ import type { EngineInterface, Register, SessionMessage, ToolCallResult } from '
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from './jev.ts'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, isUnder, judgeStop, normalize, rawAbsolute,
+  EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
   sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS,
   type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
@@ -26,6 +26,15 @@ const arg = (e: unknown, k: string): string => {
   const v = e && typeof e === 'object' ? (e as Record<string, unknown>)[k] : undefined
   return typeof v === 'string' ? v : ''
 }
+
+/**
+ * pi's own tools bridged in by pi-claude-bridge (`mcp__custom-tools__bash`) run on this machine: they get the native
+ * tool's gate, never the exfil gate meant for outside services. pi spells a path `path` and an edit `edits`.
+ */
+const BRIDGED: Record<string, string> = { bash: 'Bash', read: 'Read', write: 'Write', edit: 'Edit' }
+const kindOf = (tool: string): string => BRIDGED[/^mcp__custom-tools__(\w+)$/.exec(tool)?.[1] ?? ''] ?? tool
+/** The local path a file call names, as the host's tool opens it; null for another machine (deny). */
+const pathOf = (e: unknown): string | null => hostPath(arg(e, 'file_path') || arg(e, 'notebook_path') || arg(e, 'path'))
 
 /** What the transcript shows a call came to: only `ok` counts as evidence of a check. */
 const outcomeOf = (t: { tool: string; result?: unknown; text?: string; isError?: true }) => {
@@ -227,8 +236,9 @@ async function pathAllowed($: $, path: string, cwd: string, withAllowPaths = tru
 
 async function gate($: $, e: { tool: string }): Promise<string | undefined> {
   const tool = String(e.tool)
+  const kind = kindOf(tool)
   const cwd = await $.session.cwd()
-  if (tool === 'Bash' && c.bashGate) {
+  if (kind === 'Bash' && c.bashGate) {
     const command = arg(e, 'command')
     const state = { command: clip(command, CLIP), cwd, description: clip(arg(e, 'description'), 300), ...(command.length > CLIP ? { truncated: true } : {}) }
     const d = await decide($, 'tool.call', tool, withPolicies(state, c), withPolicyQ(BASH_Q, c))
@@ -237,24 +247,25 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
     record($, d, j.verdict, j.reason)
     return j.verdict === 'deny' ? denyText(j.reason) : undefined
   }
-  if (WRITE_TOOLS.includes(tool) && c.writeGate) {
-    const path = arg(e, 'file_path') || arg(e, 'notebook_path')
-    if (!(await pathAllowed($, path, cwd))) {
-      const reason = `${path} is outside the repo and allowPaths`
+  if (WRITE_TOOLS.includes(kind) && c.writeGate) {
+    const path = pathOf(e)
+    if (path === null || !(await pathAllowed($, path, cwd))) {
+      const reason = `${path ?? arg(e, 'path')} is outside the repo and allowPaths`
       const x = await session($)
       x.s.denies++
       writeSession($, x.p, x.s)
       appendLog($, x.p, { ts: Date.now(), session: x.p.sid, event: 'tool.call', tool, verdict: 'deny', reason })
       return denyText(reason)
     }
-    const content = arg(e, 'content') || arg(e, 'new_string') || arg(e, 'new_source')
+    const edits = (e as { edits?: unknown }).edits
+    const content = arg(e, 'content') || arg(e, 'new_string') || arg(e, 'new_source') || (Array.isArray(edits) ? JSON.stringify(edits) : '')
     const d = await decide($, 'tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c), withPolicyQ(WRITE_Q, c))
     if (!d) return undefined
     const j = gateWrite(d.answers, c)
     record($, d, j.verdict, j.reason)
     return j.verdict === 'deny' ? denyText(j.reason) : undefined
   }
-  if ((tool === 'WebFetch' || tool.startsWith('mcp__')) && c.exfilGate) {
+  if ((kind === 'WebFetch' || kind.startsWith('mcp__')) && c.exfilGate) {
     const { tool: _t, tool_use_id: _id, consent: _c, ...input } = e as Record<string, unknown>
     const state = withPolicies({ tool, input: clip(JSON.stringify(input), 4000) }, c)
     const d = await decide($, 'tool.call', tool, state, withPolicyQ(EXFIL_Q, c))
@@ -270,13 +281,15 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
 
 /** A Read is screened only from outside the repo and allowPaths: those (memory, skills under ~/.claude) are the user's own. */
 async function readOutsideRepo($: $, e: { tool: string }): Promise<boolean> {
-  return c.screenReads && !(await pathAllowed($, arg(e, 'file_path'), await $.session.cwd()))
+  const path = pathOf(e)
+  return c.screenReads && (path === null || !(await pathAllowed($, path, await $.session.cwd())))
 }
 
 async function screenResult($: $, e: { tool: string }, r: ToolCallResult): Promise<ToolCallResult> {
   const tool = String(e.tool)
-  if (!c.injectionScreen || WRITE_TOOLS.includes(tool) || r.deny !== undefined || !r.text?.trim()) return r
-  if (tool === 'Read' && !(await readOutsideRepo($, e))) return r
+  const kind = kindOf(tool)
+  if (!c.injectionScreen || WRITE_TOOLS.includes(kind) || r.deny !== undefined || !r.text?.trim()) return r
+  if (kind === 'Read' && !(await readOutsideRepo($, e))) return r
   const d = await decide($, 'tool.result', tool, { tool, content: clip(r.text, 6000) }, SCREEN_Q)
   if (!d) return r
   const s = screen(d.answers, c)
