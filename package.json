@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Guardrails for coding agents, decided by TypeSafe's Jev: blocks destructive commands, catches prompt injection, pushes back on an unverified done and routes effort per turn. For Claude Code, pi and omp.",
   "type": "module",
   "license": "MIT",
@@ -14,8 +14,16 @@
     "omp",
     "pi",
     "claude-code",
+    "claude-code-plugin",
     "jev",
-    "guardrails"
+    "guardrails",
+    "ai-agent",
+    "ai-safety",
+    "llm-security",
+    "prompt-injection",
+    "coding-agent",
+    "agent-guardrails",
+    "bypass-permissions"
   ],
   "files": [
     "adapters/*.ts",

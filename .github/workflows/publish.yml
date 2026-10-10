@@ -29,3 +29,15 @@ jobs:
       - name: npm with trusted publishing (11.5.1 or later)
         run: npm install -g npm@11
       - run: npm publish
+
+  # A GitHub Release per tag, notes from the tag's message. Its own job, so only it can write to the repo.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag --title "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
