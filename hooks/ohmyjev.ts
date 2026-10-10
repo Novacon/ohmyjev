@@ -3,12 +3,13 @@
  * answers the engine. Every failure passes through; storage is fire-and-forget.
  */
 import type { EngineInterface, Register, SessionMessage, ToolCallResult } from 'claude-code'
+import { dashboardHtml } from './dashboard.ts'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from './jev.ts'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
-  sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, OMJ_HELP, OMJ_OFF, OMJ_ON, settingsRows, toggleArg,
+  sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, settingsRows, toggleArg,
   type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -361,9 +362,21 @@ async function jevReport($: $): Promise<string> {
   ].join('\n')
 }
 
-/** /omj and /ohmyjev: the report, `settings`, or `on`/`off` for this session (the enabled setting is the default). */
+/** /omj stats: every session's log as one page at ~/.ohmyjev/dashboard.html, opened in the browser. */
+async function openDashboard($: $): Promise<string> {
+  const x = await session($)
+  // ponytail: cat of every log; trim the directory if it ever grows past what one page should show
+  const logs = await $.process.run(['sh', '-c', 'cat "$0"/log/*.jsonl 2>/dev/null', x.p.dir], { timeoutMs: 5000 }).catch(() => undefined)
+  const path = `${x.p.dir}/${DASHBOARD}`
+  await $.fs.write(path, dashboardHtml(parseLog(logs?.stdout ?? ''), { now: Date.now(), sid: x.p.sid, source: 'claude code' }))
+  const opened = await $.process.run(['sh', '-c', 'open "$0" 2>/dev/null || xdg-open "$0"', path], { timeoutMs: 5000 }).catch(() => undefined)
+  return `dashboard: ${path}${opened?.exitCode === 0 ? ' (opened in your browser)' : ' (open it in a browser)'}`
+}
+
+/** /omj and /ohmyjev: the report, `stats`, `settings`, or `on`/`off` for this session (the enabled setting is the default). */
 async function runCommand($: $, args: string): Promise<string> {
   const a = args.trim()
+  if (a === 'stats') return openDashboard($)
   if (a === 'settings') return [...settingsRows(c), '', 'Edit with /plugin configure ohmyjev@ohmyjev, then /reload-plugins.'].join('\n')
   const enabled = toggleArg(a)
   if (enabled !== undefined) {
@@ -445,7 +458,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
     for (const name of ['omj', 'ohmyjev'])
-      await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; on/off for this session", argumentHint: '[settings|on|off]' }).catch(() => undefined)
+      await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", argumentHint: '[stats|settings|on|off]' }).catch(() => undefined)
     const k = await keyOf($, c)
     say(
       $,

@@ -513,3 +513,18 @@ test('enabled: false in the settings is off from the start', { options: { enable
   expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })).deny).toBe(undefined)
   expect(fake.requests.length).toBe(0)
 })
+
+test('/omj stats writes the dashboard from every log and opens it', async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9))
+  tool(on)
+  await $.tool.call({ tool: 'Bash', command: 'rm -rf /' })
+  await flush()
+  const r = await $.command.run({ command: 'omj', args: 'stats', origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
+  expect(r.text).toContain('/home/u/.ohmyjev/dashboard.html')
+  const html = fake.files['/home/u/.ohmyjev/dashboard.html']!
+  expect(html).toContain('<title>ohmyjev · stats</title>')
+  expect(html).toContain('irreversible (0.95)')
+  expect(html).toContain('test-ses') // this session, highlighted
+  expect(html).not.toContain('ts-test')
+  expect(fake.ran.some(a => a[0] === 'sh' && a[2]!.startsWith('open "$0"'))).toBe(true)
+})

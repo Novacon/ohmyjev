@@ -4,11 +4,12 @@
  * under pi (Node) and omp (Bun). Every decision stays in hooks/policy.ts; every failure passes the call through.
  */
 import { execFile } from 'node:child_process'
-import { appendFile, chmod, lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
+import { dashboardHtml } from '../hooks/dashboard.ts'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from '../hooks/jev.ts'
 import {
-  EMPTY_SESSION, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, parseWorktrees, rawAbsolute, sanitizeSid, splitList, statusText,
-  summarize, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
+  DASHBOARD, EMPTY_SESSION, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, parseLog, parseWorktrees, rawAbsolute, sanitizeSid,
+  splitList, statusText, summarize, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
 } from '../hooks/policy.ts'
 
 export type Env = Readonly<Record<string, string | undefined>>
@@ -132,6 +133,20 @@ export class Session {
     this.log(d.e)
   }
 
+  /**
+   * /omj stats: every session's log as one page at ~/.ohmyjev/dashboard.html, opened with `open` or `xdg-open`
+   * (tests pass their own opener). The line to show the user.
+   */
+  async dashboard(source: string, open: (path: string) => Promise<boolean> = openInBrowser): Promise<string> {
+    await this.ready
+    const dir = `${this.dir}/log`
+    const names = (await readdir(dir).catch(() => [] as string[])).filter(n => n.endsWith('.jsonl'))
+    const logs = await Promise.all(names.map(n => readFile(`${dir}/${n}`, 'utf8').catch(() => '')))
+    const path = `${this.dir}/${DASHBOARD}`
+    await writeFile(path, dashboardHtml(parseLog(logs.join('\n')), { now: Date.now(), sid: this.sid, source }), { mode: 0o600 })
+    return `dashboard: ${path}${(await open(path)) ? ' (opened in your browser)' : ' (open it in a browser)'}`
+  }
+
   /** A deny decided by code (a path), counted and logged like Jev's. */
   denyByCode(tool: string, reason: string): void {
     this.s.denies++
@@ -160,6 +175,13 @@ export class Session {
       `key: ${k ? `${k.source} · ${k.provider} · ${k.model}` : 'none (set TYPESAFE_API_KEY or the apiKey setting)'}`,
     ].join('\n')
   }
+}
+
+/** `open` on macOS, `xdg-open` elsewhere; false when neither works. */
+function openInBrowser(path: string): Promise<boolean> {
+  const { promise, resolve } = Promise.withResolvers<boolean>()
+  execFile('sh', ['-c', 'open "$0" 2>/dev/null || xdg-open "$0"', path], { timeout: 5000 }, err => resolve(!err))
+  return promise
 }
 
 // --- paths: code decides, never Jev ---

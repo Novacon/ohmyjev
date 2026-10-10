@@ -67,7 +67,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
-| **`/omj`** | Shows this session's Jev calls, errors, cost, median latency and denies, plus where the key comes from. It never prints the key itself. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
+| **`/omj`** | Shows this session's Jev calls, errors, cost, median latency and denies, plus where the key comes from. It never prints the key itself. `/omj stats` opens a dashboard of every session in your browser. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
 
 ### How a tool call goes through it
 
@@ -248,6 +248,13 @@ said, then what the router did with it:
 [ohmyjev] jev: tier fast (0.41) · effort 0.4 (0.38) · risky 0.01 · 210ms
 [ohmyjev] main loop kept opus/medium, wanted opus/low (confidence 0.38)
 ```
+
+### `/omj stats`
+
+Writes every session's decisions into one page at `~/.ohmyjev/dashboard.html` and opens it: calls, denies, flags, cost
+and latency, a 30-day chart, a table per tool and per session, and the latest denies with their reasons. It's a plain
+file, read from the logs, so nothing on it leaves the machine (the page fetches its fonts from ohmyjev.xyz, and falls
+back to system fonts offline).
 
 ### `/omj off`
 

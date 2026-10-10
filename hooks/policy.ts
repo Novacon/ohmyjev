@@ -432,7 +432,8 @@ export type LogEntry = {
 
 // --- ask_jev, /omj and /ohmyjev ---
 
-export const OMJ_HELP = 'usage: /omj [settings|on|off]. /ohmyjev is the same command.'
+export const OMJ_HELP = 'usage: /omj [stats|settings|on|off]. /ohmyjev is the same command.'
+export const DASHBOARD = 'dashboard.html'
 export const OMJ_OFF = 'ohmyjev off for this session: every call passes through. /omj on turns it back. The enabled setting is the default for new sessions.'
 export const OMJ_ON = 'ohmyjev on: gates, screens, done-check and router are back for this session.'
 /** `/omj on|off` as the new enabled value; undefined for any other argument. */
@@ -455,14 +456,20 @@ export function buildQuestion(i: { question?: unknown; type?: unknown; options?:
   return 'type must be noul, choice or score'
 }
 
-/** /jev's body from a session log: calls, errors, cost, p50, denies per tool, the last 5 denies. Torn lines are skipped. */
-export function summarize(log: string): string {
+/** The entries of one or more decision logs; torn lines and blanks are skipped. */
+export function parseLog(log: string): LogEntry[] {
   const rows: LogEntry[] = []
   for (const line of log.split('\n')) {
     try {
       if (line.trim()) rows.push(JSON.parse(line) as LogEntry)
     } catch {}
   }
+  return rows
+}
+
+/** /omj's body from a session log: calls, errors, cost, p50, denies per tool, the last 5 denies. */
+export function summarize(log: string): string {
+  const rows = parseLog(log)
   const calls = rows.filter(r => r.answers)
   const ms = calls.map(r => r.ms ?? 0).sort((a, b) => a - b)
   const cost = calls.reduce((n, r) => n + (r.costUsd ?? 0), 0)

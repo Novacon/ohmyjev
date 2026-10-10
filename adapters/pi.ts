@@ -363,13 +363,14 @@ export function createExtension(options: PiAdapterOptions = {}) {
           }
           status()
           ctx.ui.notify(enabled ? OMJ_ON : OMJ_OFF, 'info')
-        } else ctx.ui.notify(a === 'settings' ? settingsRows(c).join('\n') : a ? OMJ_HELP : await x.report(c.enabled), 'info')
+        } else if (a === 'stats') ctx.ui.notify(await x.dashboard('pi'), 'info')
+        else ctx.ui.notify(a === 'settings' ? settingsRows(c).join('\n') : a ? OMJ_HELP : await x.report(c.enabled), 'info')
       } catch {
         ctx.ui.notify('ohmyjev report unavailable', 'warning')
       }
     }
     for (const name of ['omj', 'ohmyjev'])
-      pi.registerCommand(name, { description: "ohmyjev: this session's Jev calls, denies, cost and key source; on/off for this session", handler: command })
+      pi.registerCommand(name, { description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", handler: command })
 
     pi.on('session_start', guarded(async (_event, ctx) => {
       reset()

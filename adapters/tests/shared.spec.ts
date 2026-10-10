@@ -105,3 +105,16 @@ test('ask_jev sends repo files, never a file outside the repo', async () => {
   expect(files[`${outside}/secret.txt`]).not.toContain('TOKEN')
   expect(files['link/secret.txt']).not.toContain('TOKEN')
 })
+
+test('/omj stats writes a dashboard from every session log and asks the opener', async () => {
+  const x = new Session(c, env(), 'dash-1', () => {}, async () => reply(bash))
+  await x.decide('tool.call', 'bash', { command: 'ls' }, BASH_Q).then(d => d && x.record(d, 'deny', 'irreversible (0.95): test deny'))
+  await new Promise(r => setTimeout(r, 50))
+  let opened = ''
+  const line = await x.dashboard('test', async p => ((opened = p), true))
+  expect(line).toContain(`${home}/.ohmyjev/dashboard.html (opened in your browser)`)
+  expect(opened).toBe(`${home}/.ohmyjev/dashboard.html`)
+  const html = await readFile(opened, 'utf8')
+  expect(html).toContain('irreversible (0.95): test deny')
+  expect(html).toContain('<code>dash-1</code> <span class="g">this</span>')
+})

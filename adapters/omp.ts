@@ -665,7 +665,8 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
           }
           status()
           ctx.ui.notify(enabled ? OMJ_ON : OMJ_OFF, 'info')
-        } else if (a === 'settings') ctx.ui.notify(settingsRows(c).join('\n'), 'info')
+        } else if (a === 'stats') ctx.ui.notify(session ? await session.dashboard('omp') : 'ohmyjev: no active session', 'info')
+        else if (a === 'settings') ctx.ui.notify(settingsRows(c).join('\n'), 'info')
         else if (a) ctx.ui.notify(OMJ_HELP, 'info')
         else ctx.ui.notify(session ? await session.report(c.enabled) : 'ohmyjev: no active session', 'info')
       } catch {
@@ -673,7 +674,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
       }
     }
     for (const name of ['omj', 'ohmyjev'])
-      pi.registerCommand(name, { description: "ohmyjev: this session's Jev calls, denies, cost and key source; on/off for this session", handler: command })
+      pi.registerCommand(name, { description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", handler: command })
   }
 }
 
