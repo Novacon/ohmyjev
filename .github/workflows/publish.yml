@@ -21,6 +21,8 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0 # the version that built codex/ohmyjev.mjs; the codex spec checks the bundle with it
       - name: The tag matches package.json
         run: test "${GITHUB_REF_NAME#v}" = "$(node -p 'require("./package.json").version')"
       - run: bun install --frozen-lockfile
