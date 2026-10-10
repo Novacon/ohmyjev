@@ -95,8 +95,8 @@ export function dashboardHtml(rows: LogEntry[], opts: { now: number; sid?: strin
 @font-face { font-family: "Space Grotesk"; src: url("${FONTS}/SpaceGrotesk-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
 @font-face { font-family: "JetBrains Mono"; src: url("${FONTS}/JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 :root {
-  --ground: #080b09; --surface: #111713; --panel: rgba(17, 23, 19, .9); --panel-hi: rgba(26, 36, 29, .94);
-  --paper: #f4f8f5; --muted: #a5b5a9; --faint: #829487; --line: #2c3930; --steel: #829487;
+  --ground: #0a0a0a; --surface: #131313; --panel: rgba(19, 19, 19, .9); --panel-hi: rgba(28, 28, 28, .94);
+  --paper: #f4f8f5; --muted: #a5b5a9; --faint: #829487; --line: #2e2e2e; --steel: #829487;
   --brand: #00ee22; --brand-hi: #39ff53; --link: #79ff98; --lavender: #b69cff;
   --ok: #56e887; --warn: #ffc857; --err: #ff737d; --info: #74c7ff;
   --ui: clamp(.875rem, .82rem + .15vw, 1rem);
@@ -110,7 +110,7 @@ html { background: var(--ground); scrollbar-color: var(--line) var(--ground); }
 body {
   min-height: 100vh; padding: clamp(26px, 4.5vh, 64px) clamp(22px, 6vw, 120px) 80px; color: var(--paper); font-family: var(--body);
   -webkit-font-smoothing: antialiased; background: var(--ground);
-  background-image: linear-gradient(rgba(130, 148, 135, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(130, 148, 135, .07) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(140, 140, 140, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(140, 140, 140, .07) 1px, transparent 1px);
   background-size: 64px 64px;
 }
 ::selection { background: rgba(0, 238, 34, .3); color: var(--paper); }
@@ -160,7 +160,7 @@ section { margin-bottom: clamp(24px, 4vh, 44px); }
 .tbl { overflow: auto; border: 1px solid var(--line); scrollbar-width: thin; }
 table { width: 100%; border-collapse: collapse; }
 th { padding: 7px 14px; text-align: left; font: 600 .75rem var(--label); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
-td { padding: 6px 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .9375rem; line-height: 1.35; vertical-align: top; background: rgba(17, 23, 19, .82); font-variant-numeric: tabular-nums; }
+td { padding: 6px 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .9375rem; line-height: 1.35; vertical-align: top; background: rgba(19, 19, 19, .82); font-variant-numeric: tabular-nums; }
 tr:last-child td { border-bottom: 0; }
 tr:hover td { background: var(--panel-hi); }
 td:first-child, td:nth-child(2) { white-space: nowrap; }

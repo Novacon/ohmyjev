@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ohmyjev</title>
 <meta name="description" content="Guardrails for Claude Code, decided by Jev. One mod that blocks destructive commands, catches prompt injection, pushes back on an unverified done and routes effort per turn.">
-<meta name="theme-color" content="#080b09">
+<meta name="theme-color" content="#0a0a0a">
 <script>document.documentElement.classList.add('js')</script>
 <style>
 @font-face { font-family: "Changa"; src: url("fonts/Changa-ExtraBold.woff2") format("woff2"); font-weight: 800; font-display: swap; }
@@ -19,14 +19,14 @@
    Every doc slide shares one frame: label + heading on the left, lede on the right, then a body
    whose panels stretch to equal heights, so the slides line up when you page through them. */
 :root {
-  --ground: #080b09;
-  --surface: #111713;
-  --panel: rgba(17, 23, 19, .9);
-  --panel-hi: rgba(26, 36, 29, .94);
+  --ground: #0a0a0a;
+  --surface: #131313;
+  --panel: rgba(19, 19, 19, .9);
+  --panel-hi: rgba(28, 28, 28, .94);
   --paper: #f4f8f5;
   --muted: #a5b5a9;
   --faint: #829487;
-  --line: #2c3930;
+  --line: #2e2e2e;
   --steel: #829487;
   --brand: #00ee22;
   --brand-hi: #39ff53;
@@ -124,7 +124,7 @@ code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
 #slide-progress { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--brand); transition: width .5s var(--ease); }
 .to-top {
   display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); color: var(--paper);
-  background: rgba(17, 23, 19, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  background: rgba(19, 19, 19, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   transition: border-color .2s ease, color .2s ease;
 }
 .to-top span { color: var(--brand); }
@@ -133,19 +133,19 @@ code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
 /* content fades out under the fixed header and the bottom chrome */
 body::before, body::after { content: ""; position: fixed; left: 0; right: 0; z-index: 14; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
 /* solid down past the docked wordmark (and the notch, which the header also clears), then a short fade */
-body::before { top: 0; height: calc(env(safe-area-inset-top, 0px) + var(--block) + 56px); background: linear-gradient(var(--ground) calc(100% - 22px), rgba(8, 11, 9, 0)); }
-body::after { bottom: 0; height: calc(var(--block) + 52px); background: linear-gradient(rgba(8, 11, 9, 0), var(--ground) 55%); }
+body::before { top: 0; height: calc(env(safe-area-inset-top, 0px) + var(--block) + 56px); background: linear-gradient(var(--ground) calc(100% - 22px), rgba(10, 10, 10, 0)); }
+body::after { bottom: 0; height: calc(var(--block) + 52px); background: linear-gradient(rgba(10, 10, 10, 0), var(--ground) 55%); }
 .passed::before, .passed::after { opacity: 1; }
 
 /* side rail, after omp.sh: one square per slide, title pops out on hover */
 .rail {
   position: fixed; right: clamp(16px, 1.8vw, 40px); top: 50%; transform: translateY(-50%); z-index: 16;
   display: flex; flex-direction: column; border: 1px solid var(--line);
-  background: rgba(17, 23, 19, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  background: rgba(19, 19, 19, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
 }
 .rail a { position: relative; display: grid; place-items: center; width: 58px; height: 58px; border-bottom: 1px solid var(--line); color: var(--steel); transition: color .2s ease, background .2s ease; }
 .rail a:last-child { border-bottom: 0; }
-.rail a:hover, .rail a:focus-visible { color: var(--paper); background: rgba(130, 148, 135, .1); outline: none; }
+.rail a:hover, .rail a:focus-visible { color: var(--paper); background: rgba(140, 140, 140, .1); outline: none; }
 .rail a[aria-current="page"] { color: var(--brand); background: rgba(0, 238, 34, .07); }
 .rail a[aria-current="page"]::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 2px; background: var(--brand); }
 .rail svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: square; stroke-linejoin: miter; }
@@ -189,10 +189,10 @@ h1 a:hover { color: var(--brand-hi); }
 .qs-tab:hover { color: var(--paper); }
 .qs-tab[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); }
 .qs-rows[hidden] { display: none; }
-.qs-rows { border: 1px solid var(--line); background: rgba(17, 23, 19, .78); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.qs-rows { border: 1px solid var(--line); background: rgba(19, 19, 19, .78); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .qs-row { display: flex; align-items: stretch; border-top: 1px solid var(--line); transition: background .2s ease; }
 .qs-row:first-child { border-top: 0; }
-.qs-row:hover { background: rgba(26, 36, 29, .6); }
+.qs-row:hover { background: rgba(28, 28, 28, .6); }
 .qs-n, .qs-p { display: grid; place-items: center; width: 44px; flex: none; border-right: 1px solid var(--line); font-family: var(--mono); font-size: .875rem; }
 .qs-n { color: var(--faint); }
 .qs-p { color: var(--brand); }
@@ -253,7 +253,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 .stats .lbl { font-size: .75rem; line-height: 1.4; color: var(--faint); }
 
 /* code windows */
-.code { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); background: rgba(8, 11, 9, .78); }
+.code { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); background: rgba(10, 10, 10, .78); }
 .code-bar { display: flex; align-items: center; gap: 12px; padding: 7px 12px; border-bottom: 1px solid var(--line); color: var(--faint); font-size: .6875rem; }
 .code-bar .dots { color: var(--steel); font-size: .5rem; letter-spacing: .35em; }
 .copy { margin-left: auto; color: var(--muted); font-size: .6875rem; transition: color .2s ease; }
@@ -272,7 +272,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 .card-head a.meta { color: var(--muted); transition: color .2s ease; }
 .card-head a.meta:hover { color: var(--paper); }
 .card-head a.meta span { color: var(--brand); }
-.cmd { padding: 8px 12px; border: 1px solid var(--line); background: rgba(8, 11, 9, .78); font: 14px/1.6 var(--mono); color: var(--paper); white-space: pre-wrap; overflow-wrap: break-word; }
+.cmd { padding: 8px 12px; border: 1px solid var(--line); background: rgba(10, 10, 10, .78); font: 14px/1.6 var(--mono); color: var(--paper); white-space: pre-wrap; overflow-wrap: break-word; }
 
 /* flow: what happens to one tool call */
 .flow-cols { display: grid; gap: var(--gap); grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: stretch; }
@@ -304,7 +304,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 
 /* demo: a Claude Code window replaying one ohmyjev moment at a time */
 .demo-cols { flex: 1; display: grid; gap: var(--gap); grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: stretch; }
-.term { background: rgba(8, 11, 9, .92); }
+.term { background: rgba(10, 10, 10, .92); }
 .term-body { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 340px; padding: 18px 20px; font: 14px/1.6 var(--mono); color: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; }
 .term-body .t, .term-body .a { padding-left: 2ch; text-indent: -2ch; }
 .term-body .l { display: block; animation: line-in .35s var(--ease) both; }
@@ -347,7 +347,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 .table { border: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; }
 table { width: 100%; border-collapse: collapse; }
 th { padding: 7px 14px; text-align: left; font: 600 .6875rem var(--label); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--line); background: var(--panel); }
-td { padding: clamp(3px, .5vh, 8px) 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .9375rem; line-height: 1.35; vertical-align: top; background: rgba(17, 23, 19, .82); transition: background .2s ease; }
+td { padding: clamp(3px, .5vh, 8px) 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .9375rem; line-height: 1.35; vertical-align: top; background: rgba(19, 19, 19, .82); transition: background .2s ease; }
 tr:hover td { background: var(--panel-hi); }
 tr:last-child td { border-bottom: 0; }
 td:first-child, td:nth-child(2) { white-space: nowrap; }
@@ -407,7 +407,7 @@ td.on { color: var(--ok); }
   /* settings table becomes one block per setting: name and default on a line, what it changes under it */
   thead { display: none; }
   table, tbody, tr, td { display: block; }
-  tr { padding: 10px 14px; border-bottom: 1px solid var(--line); background: rgba(17, 23, 19, .82); }
+  tr { padding: 10px 14px; border-bottom: 1px solid var(--line); background: rgba(19, 19, 19, .82); }
   tr:last-child { border-bottom: 0; }
   td, tr:hover td { display: inline; padding: 0; border: 0; background: none; white-space: normal !important; }
   td:nth-child(2)::before { content: " · "; color: var(--faint); }
@@ -898,11 +898,11 @@ function draw(time = 0) {
   cx.clearRect(0, 0, W, H);
   px += (tx - px) * .018; py += (ty - py) * .018;
   const glow = cx.createRadialGradient(W * (.5 + (px - .5) * .18), H * (.46 + (py - .5) * .14), 0, W * .5, H * .5, Math.max(W, H) * .72);
-  glow.addColorStop(0, 'rgba(0,238,34,.045)'); glow.addColorStop(.55, 'rgba(130,148,135,.018)'); glow.addColorStop(1, 'rgba(8,11,9,0)');
+  glow.addColorStop(0, 'rgba(140,140,140,.04)'); glow.addColorStop(.55, 'rgba(140,140,140,.018)'); glow.addColorStop(1, 'rgba(10,10,10,0)');
   cx.fillStyle = glow; cx.fillRect(0, 0, W, H);
   const g = W < 600 ? 48 : 64, drift = still ? 0 : (time * .0012) % g;
   const ox = drift + (px - .5) * 12, oy = drift * .6 + (py - .5) * 12;
-  cx.lineWidth = .6; cx.strokeStyle = 'rgba(130,148,135,.1)'; cx.beginPath();
+  cx.lineWidth = .6; cx.strokeStyle = 'rgba(140,140,140,.1)'; cx.beginPath();
   for (let x = ox - g; x < W + g; x += g) { cx.moveTo(x, 0); cx.lineTo(x, H); }
   for (let y = oy - g; y < H + g; y += g) { cx.moveTo(0, y); cx.lineTo(W, y); }
   cx.stroke();
