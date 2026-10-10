@@ -9,7 +9,7 @@
 
 <p align="center">
   Guardrails for Claude Code, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.<br>
-  One mod that blocks destructive commands, catches prompt injection, pushes back on an unverified "done" and routes effort per turn.
+  One mod that stops irreversible and data-leaking commands, even in bypass mode, and runs them when you say yes. It also flags prompt injection, pushes back on an unverified "done" and routes effort per turn.
 </p>
 
 <p align="center">
@@ -38,6 +38,10 @@ Jev is TypeSafe's decision model. You send it some state and a few typed questio
 in about 300 ms for a fraction of a cent. That's fast and cheap enough to ask about every command your agent runs, so
 ohmyjev does exactly that. It runs as in-process hooks inside Claude Code, which means no extra process and no server
 to keep up.
+
+The bash gate is the core. An agent running unattended in bypass mode can't wipe a directory, force push over `main` or
+upload your keys, and it never stops to ask you for permission. When it blocks something, the agent tells you why and
+asks. Answer yes and that exact command runs. Everything else here builds on the same cheap, per-call judgment.
 
 ## Quick start
 

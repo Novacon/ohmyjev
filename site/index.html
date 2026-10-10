@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ohmyjev</title>
-<meta name="description" content="Guardrails for Claude Code, decided by Jev. One mod that blocks destructive commands, catches prompt injection, pushes back on an unverified done and routes effort per turn.">
+<meta name="description" content="Guardrails for Claude Code, decided by Jev. One mod that stops irreversible and data-leaking commands, even in bypass mode, and runs them when you say yes. It also flags prompt injection, pushes back on an unverified done and routes effort per turn.">
 <meta name="theme-color" content="#0a0a0a">
 <script>document.documentElement.classList.add('js')</script>
 <style>
@@ -421,7 +421,7 @@ td.on { color: var(--ok); }
   <section id="top" class="slide landing" data-title="Quick start" aria-label="ohmyjev quick start">
     <div class="quick">
       <h1>Guardrails for Claude Code, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.</h1>
-      <p class="tagline">One mod that blocks destructive commands, catches prompt injection, pushes back on an unverified "done" and routes effort per turn.</p>
+      <p class="tagline">One mod that stops irreversible and data-leaking commands, even in bypass mode, and runs them when you say yes. It also flags prompt injection, pushes back on an unverified "done" and routes effort per turn.</p>
       <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>pi · omp</span><span>Decided by Jev</span><span>MIT license</span></p>
       <div class="qs">
         <div class="qs-head lbl"><span>Quick start</span><span class="qs-tabs" role="tablist" aria-label="Agent"><button type="button" class="qs-tab" role="tab" data-agent="claude" aria-selected="true">Claude Code</button><button type="button" class="qs-tab" role="tab" data-agent="omp" aria-selected="false">omp</button><button type="button" class="qs-tab" role="tab" data-agent="pi" aria-selected="false">pi</button></span></div>
@@ -461,6 +461,7 @@ td.on { color: var(--ok); }
           </div>
           <div class="scenes" role="tablist" aria-label="Moments">
             <button type="button" class="scene" role="tab" aria-selected="true"><span class="st">Destructive command</span><span class="sd">A wipe that can't be undone is denied, with the reason.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">You say yes</span><span class="sd">Blocked, the agent asks. Answer yes and that exact command runs.</span></button>
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Prompt injection</span><span class="sd">A fetched page that gives orders gets a "treat as data" note.</span></button>
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Unverified done</span><span class="sd">"Fixed" with no check run? The stop is pushed back once.</span></button>
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">/omj</span><span class="sd">What it did this session, in one command.</span></button>
@@ -729,6 +730,16 @@ const SCENES = [
     ['t', '<b>Bash</b>(rm -rf ~/app)'],
     ['r x', 'ohmyjev blocked this: irreversible (0.95): nothing would restore what this removes or overwrites.'],
     ['a', 'ohmyjev blocked <b>rm -rf ~/app</b>: that deletes the whole project, not just the build. Want me to remove <b>./dist</b> and rebuild instead?'],
+  ] },
+  { status: STATUS(15, 1, 'opus/medium'), lines: [
+    ['u', 'clean up the old memory plugin, it is uninstalled'],
+    ['t', '<b>Bash</b>(rm -rf ~/.agentmemory)'],
+    ['r x', 'ohmyjev blocked this: irreversible (0.98): nothing would restore what this removes or overwrites.'],
+    ['a', 'ohmyjev blocked <b>rm -rf ~/.agentmemory</b>: nothing would bring that folder back. Run it anyway?'],
+    ['u', 'yes'],
+    ['t', '<b>Bash</b>(rm -rf ~/.agentmemory)'],
+    ['r', '(no output)'],
+    ['a', 'Removed ~/.agentmemory.'],
   ] },
   { status: STATUS(18, 0, 'opus/medium'), lines: [
     ['u', 'summarize the README for left-pad-pro'],
