@@ -4,7 +4,7 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, DEFAULTS, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop,
+  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText,
   keepInstructions, modelOf, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
@@ -497,9 +497,8 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
           }
           for (const path of paths) {
             if (!sessionLocalWrite(path) && !(await pathAllowed(path, ctx.cwd, root, c, env))) {
-              const reason = `${path} is outside the repo and allowPaths`
-              session.denyByCode(tool, reason)
-              return { block: true, reason: denyText(reason) }
+              session.denyByCode(tool, `${path} is outside the repo and allowPaths`)
+              return { block: true, reason: pathDenyText(path) }
             }
           }
           const path = paths.join('; ')

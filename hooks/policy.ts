@@ -176,6 +176,10 @@ export const clip = (text: unknown, n: number): string => {
 }
 export const sanitizeSid = (sid: string): string => sid.replace(/[^\w-]/g, '') || 'unknown'
 export const denyText = (reason: string): string => `ohmyjev blocked this: ${reason}. ${BLOCK_NOTICE}`
+/** A path deny is a setting, not a hazard: the model must not route around it, but it should tell the user how to widen it. */
+export const pathDenyText = (path: string): string =>
+  `ohmyjev blocked this: ${path} is outside the repo and allowPaths. Do not write it another way (a shell redirect, another tool). ` +
+  'If the user asked for this location, tell them to add its directory to the allowPaths setting, or to start the session in that repo.'
 
 const f2 = (x: number): string => x.toFixed(2)
 const nv = (a: Answers, k: string): number => {
@@ -390,6 +394,10 @@ export function hostPath(p: string): string | null {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) return null
   return /^@[/~]|^:[/~.]/.test(p) ? p.slice(1) : p
 }
+
+/** The worktrees in `git worktree list --porcelain` output: every checkout of the repo counts as the repo. */
+export const parseWorktrees = (porcelain: string): string[] =>
+  porcelain.split('\n').filter(l => l.startsWith('worktree ')).map(l => l.slice('worktree '.length).trim()).filter(Boolean)
 
 export const isUnder = (target: string, root: string): boolean =>
   target === root || target.startsWith(root.replace(/\/+$/, '') + '/')

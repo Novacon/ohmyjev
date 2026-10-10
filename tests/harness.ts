@@ -41,12 +41,20 @@ export const flush = async (): Promise<void> => {
 export function harness(
   on: On,
   answer: (questions: Record<string, unknown>) => Answers | 'hang',
-  opts: { status?: number; messages?: SessionMessage[] | 'throw'; env?: Record<string, string>; writeHangs?: boolean } = {},
+  opts: {
+    status?: number
+    messages?: SessionMessage[] | 'throw'
+    env?: Record<string, string>
+    writeHangs?: boolean
+    cwd?: string
+    /** `git worktree list --porcelain` by cwd; a cwd not listed is not in a repo */
+    worktrees?: Record<string, string[]>
+  } = {},
 ): Fake {
   const fake: Fake = { requests: [], logs: [], files: {}, ran: [], stops: 0, compacts: [] }
   mock.env(on, opts.env ?? { HOME: '/home/u', TMPDIR: '/tmp', TYPESAFE_API_KEY: 'ts-test' })
   on('session.id', () => ({ value: 'test-session' }))
-  on('session.cwd', () => ({ value: '/repo' }))
+  on('session.cwd', () => ({ value: opts.cwd ?? '/repo' }))
   on('session.root', () => ({ value: '/repo' }))
   on('classic.Stop', () => {
     fake.stops++ // the user's own Stop hooks, beneath the plugin
@@ -81,6 +89,10 @@ export function harness(
   on('process.run', ($, e) => {
     fake.ran.push([...e.argv])
     if (e.argv[0] === 'sh' && e.argv[2] === 'cat >> "$0"') fake.logs.push(JSON.parse((e.init?.stdin ?? '').trim()))
+    if (e.argv[0] === 'git') {
+      const list = opts.worktrees?.[e.argv[2] ?? '']
+      return { value: list ? ok(list.map(w => `worktree ${w}\nHEAD 0000\nbranch refs/heads/x\n`).join('\n')) : { ...ok(), exitCode: 128, stderr: 'fatal: not a git repository' } }
+    }
     return { value: ok() }
   })
   on('http.fetch', ($, e) => {

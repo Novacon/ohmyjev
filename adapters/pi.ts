@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop,
+  TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText,
   keepInstructions, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
@@ -430,9 +430,8 @@ export function createExtension(options: PiAdapterOptions = {}) {
       if ((tool === 'write' || tool === 'edit') && c.writeGate) {
         const path = arg(input, 'path')
         if (!(await pathAllowed(path, ctx.cwd, root, c, env))) {
-          const reason = `${path} is outside the repo and allowPaths`
-          x.denyByCode(tool, reason)
-          return { block: true, reason: denyText(reason) }
+          x.denyByCode(tool, `${path} is outside the repo and allowPaths`)
+          return { block: true, reason: pathDenyText(path) }
         }
         const content = tool === 'write' ? arg(input, 'content') : json(input.edits)
         const d = await x.decide('tool.call', tool, withPolicies({ path, content: clip(content, CLIP) }, c), withPolicyQ(WRITE_Q, c))

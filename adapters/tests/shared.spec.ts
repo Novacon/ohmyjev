@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { BASH_Q, readConfig } from '../../hooks/policy.ts'
@@ -33,6 +34,21 @@ test('a write through a link out of the repo, or a dangling link, is not allowed
   expect(await pathAllowed('link/../src/a.ts', repo, repo, c, env())).toBe(false) // the OS follows the link before `..`
   expect(await pathAllowed('dangling/x', repo, repo, c, env())).toBe(false)
   expect(await pathAllowed(`${outside}/secret.txt`, repo, repo, readConfig({ allowPaths: outside }), env())).toBe(true)
+})
+
+test('every worktree of the repo the cwd is in counts as the repo; a non-repo cwd keeps only the session root', async () => {
+  const main = `${base}/wt-main`
+  const side = `${base}/wt-side`
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: main, stdio: 'ignore', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null' } })
+  await mkdir(main, { recursive: true })
+  git('init', '-q')
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init')
+  git('worktree', 'add', '-q', side)
+  expect(await pathAllowed(`${main}/a.txt`, side, side, c, env())).toBe(true) // session in side, writing to main
+  expect(await pathAllowed(`${side}/a.txt`, main, main, c, env())).toBe(true) // and the other way
+  expect(await pathAllowed(`${side}/a.txt`, side, repo, c, env())).toBe(true) // session in repo, agent moved into side
+  expect(await pathAllowed(`${outside}/a.txt`, outside, repo, c, env())).toBe(false) // outside is not a repo
+  expect(await pathAllowed(`${repo}/src/a.ts`, outside, repo, c, env())).toBe(true) // the session root still counts
 })
 
 test('host path spellings are checked where the tool would write: @, :, file:// and other machines', async () => {

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
-  rawAbsolute, sanitizeSid, screen, statusText, type Answers,
+  rawAbsolute, sanitizeSid, screen, statusText, type Answers, parseWorktrees, pathDenyText,
   BASH_Q, buildQuestion, summarize, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
@@ -126,4 +126,12 @@ test('summarize a session log for /jev', () => {
   expect(out).toContain('calls 2 · errors 1 · cost $0.000020 · p50 100ms')
   expect(out).toContain('denies: Bash 1')
   expect(out).toContain('Bash: irreversible (0.95)')
+})
+
+test('worktree list parsing and the path deny text', () => {
+  expect(parseWorktrees('worktree /a/main\nHEAD 1\nbranch refs/heads/main\n\nworktree /a/side \nHEAD 2\ndetached\n')).toEqual(['/a/main', '/a/side'])
+  expect(parseWorktrees('')).toEqual([])
+  expect(pathDenyText('/etc/hosts')).toContain('/etc/hosts is outside the repo and allowPaths')
+  expect(pathDenyText('/etc/hosts')).toContain('allowPaths setting')
+  expect(pathDenyText('/etc/hosts')).not.toContain('This block is final')
 })

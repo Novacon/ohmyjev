@@ -97,6 +97,25 @@ test('writes to the repo, ~/.claude and /tmp are judged and allowed', async ($, 
   expect(t.ran).toBe(3)
 })
 
+test('a sibling worktree, and a repo the agent moved into, count as the repo; a non-repo cwd does not', async ($, on) => {
+  // the session started in /repo; the agent is now in /outside/subdir, a worktree of a repo that also has /outside
+  const fake = harness(on, () => writeAns('docs', 0.9, 0), { cwd: '/outside/subdir', worktrees: { '/outside/subdir': ['/outside', '/outside/subdir'] } })
+  const t = tool(on)
+  for (const file_path of ['x.txt', '/outside/y.txt', '/repo/src/z.ts'])
+    expect((await $.tool.call({ tool: 'Write', file_path, content: 'x' })).deny).toBe(undefined)
+  expect((await $.tool.call({ tool: 'Write', file_path: '/etc/hosts', content: 'x' })).deny).toContain('allowPaths setting')
+  expect(t.ran).toBe(3)
+  expect(fake.ran.some(a => a[0] === 'git' && a[2] === '/outside/subdir' && a[3] === 'worktree')).toBe(true)
+})
+
+test('a cwd outside any repo keeps the session root as the only repo', async ($, on) => {
+  harness(on, () => writeAns('docs', 0.9, 0), { cwd: '/outside' })
+  const t = tool(on)
+  expect((await $.tool.call({ tool: 'Write', file_path: 'x.txt', content: 'x' })).deny).toContain('outside the repo')
+  expect((await $.tool.call({ tool: 'Write', file_path: '/repo/src/z.ts', content: 'x' })).deny).toBe(undefined)
+  expect(t.ran).toBe(1)
+})
+
 test('a credential in an edit is denied; content comes from new_string', async ($, on) => {
   const fake = harness(on, () => writeAns('config', 0.9, 0.95))
   tool(on)

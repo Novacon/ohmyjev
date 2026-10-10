@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process'
 import { appendFile, chmod, lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from '../hooks/jev.ts'
 import {
-  EMPTY_SESSION, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, rawAbsolute, sanitizeSid, splitList, statusText,
+  EMPTY_SESSION, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, parseWorktrees, rawAbsolute, sanitizeSid, splitList, statusText,
   summarize, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
 } from '../hooks/policy.ts'
 
@@ -171,6 +171,13 @@ export function repoRoot(cwd: string): Promise<string> {
   return promise
 }
 
+/** Every checkout of the repo `cwd` is in; none when cwd is not in a repo or git is unavailable. */
+export function worktrees(cwd: string): Promise<string[]> {
+  const { promise, resolve } = Promise.withResolvers<string[]>()
+  execFile('git', ['-C', cwd, 'worktree', 'list', '--porcelain'], { timeout: 2000 }, (err, stdout) => resolve(err ? [] : parseWorktrees(stdout)))
+  return promise
+}
+
 /**
  * Where an absolute spelling lands by the OS's rules: each existing component's link followed as it is reached, then
  * `..` from where that link led. Null (deny) for a dangling link or a path that exists yet will not resolve.
@@ -197,7 +204,9 @@ export { hostPath }
 
 /**
  * Allowed only when the OS's reading (raw spelling) and a normalizing tool's reading (lexical) both land in a root:
- * the repo, plus allowPaths for writes. Spelled the way the host's tools read it (hostPath); another machine never is.
+ * the session's repo, every worktree of the repo `cwd` is in (a sibling worktree, or another project the agent was
+ * told to work in), plus allowPaths for writes. Spelled the way the host's tools read it (hostPath); another machine
+ * never is.
  */
 export async function pathAllowed(spelled: string, cwd: string, root: string, c: Config, env: Env, withAllowPaths = true): Promise<boolean> {
   const path = hostPath(spelled)
@@ -205,7 +214,7 @@ export async function pathAllowed(spelled: string, cwd: string, root: string, c:
   const home = env.HOME ?? ''
   const roots: string[] = []
   const extra = withAllowPaths ? splitList(c.allowPaths).map(r => expandRoot(r, home, env.TMPDIR)) : []
-  for (const r of [root, ...extra]) {
+  for (const r of [root, ...(await worktrees(cwd)), ...extra]) {
     const placed = r ? await place(r) : null
     if (placed) roots.push(placed)
   }

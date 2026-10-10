@@ -6,7 +6,7 @@ import type { EngineInterface, Register, SessionMessage, ToolCallResult } from '
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from './jev.ts'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, rawAbsolute,
+  EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
   sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS,
   type Config, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
@@ -215,16 +215,23 @@ async function place($: $, p: string): Promise<string | null> {
   return cur || '/'
 }
 
+/** Every checkout of the repo `cwd` is in; none when cwd is not in a repo or git is unavailable. */
+async function worktrees($: $, cwd: string): Promise<string[]> {
+  const r = await $.process.run(['git', '-C', cwd, 'worktree', 'list', '--porcelain'], { timeoutMs: 2000 }).catch(() => undefined)
+  return r?.exitCode === 0 ? parseWorktrees(r.stdout) : []
+}
+
 /**
  * Allowed only when the OS's reading (raw spelling) and a normalizing tool's reading (lexical) both land in a root:
- * the repo, plus allowPaths for writes.
+ * the session's repo, every worktree of the repo the agent's cwd is in (so a sibling worktree, or another project it
+ * was told to work in, counts), plus allowPaths for writes.
  */
 async function pathAllowed($: $, path: string, cwd: string, withAllowPaths = true): Promise<boolean> {
   const home = (await $.env.get('HOME')) ?? ''
   const tmpdir = await $.env.get('TMPDIR')
   const roots: string[] = []
   const extra = withAllowPaths ? splitList(c.allowPaths).map(r => expandRoot(r, home, tmpdir)) : []
-  for (const r of [await $.session.root(), ...extra]) {
+  for (const r of [await $.session.root(), ...(await worktrees($, cwd)), ...extra]) {
     const placed = r ? await place($, r) : null
     if (placed) roots.push(placed)
   }
@@ -250,12 +257,12 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
   if (WRITE_TOOLS.includes(kind) && c.writeGate) {
     const path = pathOf(e)
     if (path === null || !(await pathAllowed($, path, cwd))) {
-      const reason = `${path ?? arg(e, 'path')} is outside the repo and allowPaths`
+      const shown = path ?? arg(e, 'path')
       const x = await session($)
       x.s.denies++
       writeSession($, x.p, x.s)
-      appendLog($, x.p, { ts: Date.now(), session: x.p.sid, event: 'tool.call', tool, verdict: 'deny', reason })
-      return denyText(reason)
+      appendLog($, x.p, { ts: Date.now(), session: x.p.sid, event: 'tool.call', tool, verdict: 'deny', reason: `${shown} is outside the repo and allowPaths` })
+      return pathDenyText(shown)
     }
     const edits = (e as { edits?: unknown }).edits
     const content = arg(e, 'content') || arg(e, 'new_string') || arg(e, 'new_source') || (Array.isArray(edits) ? JSON.stringify(edits) : '')

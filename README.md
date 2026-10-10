@@ -59,7 +59,7 @@ If `/jev` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | Feature | What it does |
 |---|---|
 | **Bash gate** | Denies a command when Jev rates it irreversible at 0.6 or more, or destructive at 0.7 or more. |
-| **Write gate** | Denies writes outside the repo and `allowPaths`, and writes that contain a real credential. The path check is plain code, not Jev, and it follows symlinks the same way the OS does. |
+| **Write gate** | Denies writes outside the repo and `allowPaths`, and writes that contain a real credential. The repo is every worktree of the one the session started in, plus every worktree of whichever repo the agent has moved into. The path check is plain code, not Jev, and it follows symlinks the same way the OS does. |
 | **Exfil gate** | Denies a WebFetch or MCP call when Jev rates it 0.7 or more for sending your local data, files or credentials out. |
 | **Policies** | Every gate also checks the call against your own rules in the `policies` setting. |
 | **Injection screen** | When output from Bash, WebFetch, an MCP tool, or a Read outside the repo has instructions aimed at the model, it adds a note telling the model to treat that output as data. |
@@ -289,7 +289,7 @@ Run `/jev settings` to see every setting's current value (the key stays hidden).
 | `autoCompact` | on | Compacts when the task changes. `compactMinPercent` (40) sets how full the context has to be first. |
 | `askJev` | on | Gives the model the `ask_jev` tool. |
 | `policies` | empty | Your own rules, separated by `;`. |
-| `allowPaths` | `~/.claude;$TMPDIR;/tmp` | Places outside the repo where writes are allowed. ohmyjev ignores any entry with `..` in it. |
+| `allowPaths` | `~/.claude;$TMPDIR;/tmp` | Places outside the repo where writes are allowed. ohmyjev ignores any entry with `..` in it. You don't need it for a sibling worktree or another git repo the agent `cd`s into: those count as the repo. |
 | `fastModel`, `balancedModel`, `deepModel` | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | The model id for each router tier. |
 | `jevModel` | `jev-1.13.0` | The Jev model asked through TypeSafe. |
 | `timeoutMs` | 1500 | How long a gate, the screen or the router waits for Jev before letting the call through. |
