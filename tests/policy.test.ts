@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
   rawAbsolute, sanitizeSid, screen, statusText, type Answers, parseWorktrees, pathDenyText, toggleArg,
-  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
+  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, configCommand, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
 const bash = (effect: string, confidence: number, destructive: number): Answers => ({
@@ -180,4 +180,18 @@ test('plain reads skip Jev; anything that could write or run more does not', () 
     expect([cmd, isPlainRead(cmd)]).toEqual([cmd, false])
   expect(plainRead('ls', c)).toBe(true)
   expect(plainRead('ls', { ...c, policies: 'never list prod' })).toBe(false)
+})
+
+test('/omj config lists, changes one setting for the session, and never takes the key', () => {
+  const p = 'persist hint'
+  expect(configCommand(c, '', p).text).toContain('bashGate: true')
+  expect(configCommand(c, 'bashGate off', p).c.bashGate).toBe(false)
+  expect(configCommand(c, 'requested 0.9', p).c.requested).toBe(0.9)
+  expect(configCommand(c, 'policies never touch prod; no Friday deploys', p).c.policies).toBe('never touch prod; no Friday deploys')
+  expect(configCommand(c, 'bashGate maybe', p).text).toContain('on or off')
+  expect(configCommand(c, 'timeoutMs fast', p).text).toContain('a number')
+  expect(configCommand(c, 'nope 1', p).text).toContain('no setting named nope')
+  const k = configCommand(c, 'apiKey ts-secret', p)
+  expect(k.c.apiKey).toBe(c.apiKey)
+  expect(k.text).not.toContain('ts-secret')
 })

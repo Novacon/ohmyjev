@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead,
-  OMJ_HELP, OMJ_OFF, OMJ_ON, settingsRows, toggleArg,
+  TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead, configCommand,
+  OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
   keepInstructions, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
@@ -370,7 +370,12 @@ export function createExtension(options: PiAdapterOptions = {}) {
           status()
           ctx.ui.notify(enabled ? OMJ_ON : OMJ_OFF, 'info')
         } else if (a === 'stats') ctx.ui.notify(await x.dashboard('pi'), 'info')
-        else ctx.ui.notify(a === 'settings' ? settingsRows(c).join('\n') : a ? OMJ_HELP : await x.report(c.enabled), 'info')
+        else if (a === 'settings' || a === 'config' || a.startsWith('config ')) {
+          const r = configCommand(c, a.replace(/^(settings|config)/, ''), 'To keep a change, put it under ohmyjev in ~/.pi/agent/settings.json.')
+          c = r.c
+          status()
+          ctx.ui.notify(r.text, 'info')
+        } else ctx.ui.notify(a ? OMJ_HELP : await x.report(c.enabled), 'info')
       } catch {
         ctx.ui.notify('ohmyjev report unavailable', 'warning')
       }

@@ -9,7 +9,7 @@ import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
-  callSummary, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, settingsRows, toggleArg,
+  callSummary, configCommand, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, toggleArg,
   type Config, type Judged, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -388,7 +388,12 @@ async function openDashboard($: $): Promise<string> {
 async function runCommand($: $, args: string): Promise<string> {
   const a = args.trim()
   if (a === 'stats') return openDashboard($)
-  if (a === 'settings') return [...settingsRows(c), '', 'Edit with /plugin configure ohmyjev@ohmyjev, then /reload-plugins.'].join('\n')
+  if (a === 'settings' || a === 'config' || a.startsWith('config ')) {
+    const r = configCommand(c, a.replace(/^(settings|config)/, ''), 'To keep a change, use /plugin configure ohmyjev@ohmyjev, then /reload-plugins.')
+    c = r.c
+    showStatus($, (await session($)).s)
+    return r.text
+  }
   const enabled = toggleArg(a)
   if (enabled !== undefined) {
     c = { ...c, enabled }
@@ -477,7 +482,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
     for (const name of ['omj', 'ohmyjev'])
-      await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", argumentHint: '[stats|settings|on|off]' }).catch(() => undefined)
+      await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", argumentHint: '[stats|config [name value]|on|off]' }).catch(() => undefined)
     const k = await keyOf($, c)
     say(
       $,

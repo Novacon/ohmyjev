@@ -465,6 +465,7 @@ td.on { color: var(--ok); }
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Prompt injection</span><span class="sd">A fetched page that gives orders gets a "treat as data" note.</span></button>
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Unverified done</span><span class="sd">"Fixed" with no check run? The stop is pushed back once.</span></button>
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">/omj</span><span class="sd">What it did this session, in one command.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">/omj config</span><span class="sd">See every setting, change one for the session.</span></button>
           </div>
         </div>
       </div>
@@ -488,7 +489,7 @@ td.on { color: var(--ok); }
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind route">Route</span></div><h3>Router</h3><p>Sets effort and the subagent model from one Jev call per request. No key? Claude Code's own classifier steps in, routing up only.</p><p class="cfg">routeEffort, routeSubagents</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind route">Route</span></div><h3>Auto-compact</h3><p>Task changed and context at least 40% full? It compacts, keeping the new request in full.</p><p class="cfg">autoCompact</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about repo files or text without loading them into its own context.</p><p class="cfg">askJev</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/omj</h3><p>This session's calls, errors, cost, median latency, denies and key source, never the key. <code>/omj stats</code> opens a dashboard of every session. <code>/omj off</code> and <code>on</code> switch it for the session. <code>/ohmyjev</code> is the same command.</p><p class="cfg">slash command · enabled</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/omj</h3><p>This session's calls, errors, cost, median latency, denies and key source, never the key. <code>/omj config</code> shows and changes settings. <code>/omj stats</code> opens a dashboard of every session. <code>/omj off</code> and <code>on</code> switch it for the session. <code>/ohmyjev</code> is the same command.</p><p class="cfg">slash command · enabled</p></div>
         </div>
       </div>
     </div>
@@ -623,7 +624,7 @@ key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</pre></div>
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">06 / Settings <span>/config</span></p><h2>tune <em>it</em></h2>
-        <p class="lede">Every setting except the key is a row in <code>/config</code>, gate thresholds included; their defaults are in <a href="#features">What you get</a>.</p>
+        <p class="lede">Every setting except the key is a row in <code>/config</code>, gate thresholds included. <code>/omj config &lt;name&gt; &lt;value&gt;</code> changes one for the session; their defaults are in <a href="#features">What you get</a>.</p>
       </div>
       <div class="body reveal main-last">
         <div class="table">
@@ -765,6 +766,17 @@ calls 23 · errors 0 · cost $0.000966 · p50 310ms
 denies: Bash 1
   Bash: irreversible (0.95): nothing would restore what this removes or overwrites
 key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`],
+  ] },
+  { status: STATUS(23, 1, '↑opus/high'), lines: [
+    ['u', '/omj config'],
+    ['m', `enabled: true
+bashGate: true · writeGate: true · exfilGate: true
+requested: 0.8 · timeoutMs: 1500
+policies: (empty)
+apiKey: set (hidden)
+Change one for this session with /omj config &lt;name&gt; &lt;value&gt;.`],
+    ['u', '/omj config policies no deploys on Friday'],
+    ['m', 'policies: no deploys on Friday for this session. To keep a change, use /plugin configure ohmyjev@ohmyjev.'],
   ] },
 ];
 const termBody = $('term-body'), termInput = $('term-input'), termStatus = $('term-status');

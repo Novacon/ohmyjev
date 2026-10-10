@@ -77,7 +77,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
-| **`/omj`** | This session's Jev calls, errors, cost, median latency and denies, and where the key comes from. It never prints the key. `/omj stats` opens a dashboard of every session in your browser. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
+| **`/omj`** | This session's Jev calls, errors, cost, median latency and denies, and where the key comes from. It never prints the key. `/omj config` lists and changes settings. `/omj stats` opens a dashboard of every session in your browser. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
 
 ### How a tool call goes through it
 
@@ -221,8 +221,7 @@ directory to `allowPaths`, because that block is a setting, not a hazard.
 
 ### `/omj`
 
-Run it any time for this session's numbers. `/ohmyjev` is the same command, and `/omj settings` lists every setting's
-value. An example:
+Run it any time for this session's numbers. `/ohmyjev` is the same command. An example:
 
 ```
 jev ✓23 ⛔1 ↑opus/high
@@ -279,6 +278,20 @@ totals, a 30-day chart of calls and denies, a table per tool and per session, an
 It is a plain file built from the logs, so nothing on it leaves the machine. The page loads its fonts from ohmyjev.xyz
 and falls back to system fonts offline.
 
+### `/omj config`
+
+Lists every setting with its current value, the key hidden. Add a name and a value to change one for this session:
+
+```
+/omj config bashGate off           turn the bash gate off until the session ends
+/omj config requested 0.9          ask Jev to be surer you asked for a call before it passes
+/omj config policies no deploys on Friday
+```
+
+On and off, true and false, and numbers are checked against the setting's type. The key can't be set here, so it never
+lands in the transcript. A change lasts for the session. To keep it, use `/plugin configure ohmyjev@ohmyjev` in Claude
+Code, `omp plugin config set ohmyjev <name> <value>` in omp, or the `ohmyjev` key in pi's settings file.
+
 ### `/omj off`
 
 Turns every gate, the screen, the done-check and the router off for this session. The status shows `jev off`.
@@ -307,8 +320,8 @@ if jev:
 
 ## Settings
 
-Run `/omj settings` to see every setting's current value (the key stays hidden). To change them, run
-`/plugin configure ohmyjev@ohmyjev` inside Claude Code, then `/reload-plugins`.
+Run `/omj config` to see every setting's current value (the key stays hidden), and `/omj config <name> <value>` to change
+one for the session. To keep a change, run `/plugin configure ohmyjev@ohmyjev` inside Claude Code, then `/reload-plugins`.
 
 | Setting | Default | What it changes |
 |---|---|---|

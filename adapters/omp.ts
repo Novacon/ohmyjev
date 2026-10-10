@@ -4,8 +4,8 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, DEFAULTS, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead,
-  OMJ_HELP, OMJ_OFF, OMJ_ON, settingsRows, toggleArg,
+  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead, configCommand,
+  OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
   keepInstructions, modelOf, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
@@ -690,7 +690,12 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
           status()
           ctx.ui.notify(enabled ? OMJ_ON : OMJ_OFF, 'info')
         } else if (a === 'stats') ctx.ui.notify(session ? await session.dashboard('omp') : 'ohmyjev: no active session', 'info')
-        else if (a === 'settings') ctx.ui.notify(settingsRows(c).join('\n'), 'info')
+        else if (a === 'settings' || a === 'config' || a.startsWith('config ')) {
+          const r = configCommand(c, a.replace(/^(settings|config)/, ''), 'To keep a change, run omp plugin config set ohmyjev <name> <value>.')
+          c = r.c
+          status()
+          ctx.ui.notify(r.text, 'info')
+        }
         else if (a) ctx.ui.notify(OMJ_HELP, 'info')
         else ctx.ui.notify(session ? await session.report(c.enabled) : 'ohmyjev: no active session', 'info')
       } catch {

@@ -512,13 +512,33 @@ export type LogEntry = {
 
 // --- ask_jev, /omj and /ohmyjev ---
 
-export const OMJ_HELP = 'usage: /omj [stats|settings|on|off]. /ohmyjev is the same command.'
+export const OMJ_HELP = 'usage: /omj [stats|config [name value]|on|off]. /ohmyjev is the same command.'
 export const DASHBOARD = 'dashboard.html'
 export const OMJ_OFF = 'ohmyjev off for this session: every call passes through. /omj on turns it back. The enabled setting is the default for new sessions.'
 export const OMJ_ON = 'ohmyjev on: gates, screens, done-check and router are back for this session.'
 /** `/omj on|off` as the new enabled value; undefined for any other argument. */
 export const toggleArg = (args: string): boolean | undefined => ({ on: true, off: false })[args.trim() as 'on' | 'off']
 /** /omj settings: every setting's current value, the key only as set or not. */
+/**
+ * /omj config: no name lists every setting; `name value` changes one for this session. The key is never set here, so
+ * it never lands in the transcript. `persist` is the host's own way to make a change stick.
+ */
+export function configCommand(c: Config, args: string, persist: string): { c: Config; text: string } {
+  const [name = '', ...rest] = args.trim().split(/\s+/)
+  const value = rest.join(' ')
+  if (!name) return { c, text: [...settingsRows(c), '', `Change one for this session with /omj config <name> <value>. ${persist}`].join('\n') }
+  if (!(name in DEFAULTS) || name === 'apiKey')
+    return { c, text: name === 'apiKey' ? `apiKey is not set here, so it never lands in the transcript. ${persist}` : `no setting named ${name}. /omj config lists them.` }
+  const key = name as keyof Config
+  const was = DEFAULTS[key]
+  let next: unknown
+  if (typeof was === 'boolean') next = /^(on|true|yes|1)$/i.test(value) ? true : /^(off|false|no|0)$/i.test(value) ? false : undefined
+  else if (typeof was === 'number') next = value.trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : undefined
+  else next = value
+  if (next === undefined) return { c, text: `${name} takes ${typeof was === 'boolean' ? 'on or off' : 'a number'}, got "${value}".` }
+  return { c: { ...c, [key]: next }, text: `${name}: ${next === '' ? '(empty)' : String(next)} for this session. ${persist}` }
+}
+
 export const settingsRows = (c: Config): string[] =>
   Object.entries(c).map(([k, v]) => (k === 'apiKey' ? `apiKey: ${v ? 'set (hidden)' : 'not set'}` : `${k}: ${v === '' ? '(empty)' : String(v)}`))
 

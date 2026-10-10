@@ -572,3 +572,13 @@ test('after a block, a bare "yes" reaches Jev with the blocked call beside it', 
   await $.tool.call({ tool: 'Bash', command: 'rm -rf ~/.agentmemory' })
   expect(fake.requests.filter(r => r.body.state.command === 'rm -rf ~/.agentmemory').at(-1)!.body.state.blocked_before).toBe(undefined)
 })
+
+test('/omj config bashGate off turns that gate off for the session', async ($, on) => {
+  const fake = harness(on, () => bashAns('irreversible', 0.95, 0.9))
+  tool(on)
+  const run = (args: string) => $.command.run({ command: 'omj', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false } } as never)
+  expect((await run('config')).text).toContain('bashGate: true')
+  expect((await run('config bashGate off')).text).toContain('bashGate: false for this session')
+  expect((await $.tool.call({ tool: 'Bash', command: 'rm -rf build' })).deny).toBe(undefined)
+  expect(fake.requests.filter(r => 'effect' in r.body.questions).length).toBe(0)
+})
