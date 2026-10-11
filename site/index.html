@@ -511,30 +511,33 @@ td.on { color: var(--ok); }
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">03 / How it decides <span>One tool call</span></p><h2>how it <em>decides</em></h2>
-        <p class="lede">Every tool call gets one quick question to Jev. Only a clear risk gets denied. Anything else goes on to Claude Code's normal permission flow, the same as without ohmyjev.</p>
+        <p class="lede">Every tool call gets one quick question to Jev. A clear risk is denied, a clearly safe call runs without a permission prompt, and anything in between goes on to Claude Code's normal flow, the same as without ohmyjev.</p>
       </div>
       <div class="body reveal main-first">
         <div class="flow-cols">
           <div class="pipe">
             <div class="node"><span class="lbl">In</span>Claude calls a tool</div>
             <div class="stage">
-              <h3><b>01</b> ohmyjev asks Jev <i>~300 ms</i></h3>
+              <h3><b>01</b> ohmyjev asks Jev <i>~200 ms</i></h3>
               <div class="rule"><span class="if">Clearly risky</span><span class="to" aria-hidden="true">→</span><span class="then deny">Denied, with the reason</span></div>
-              <div class="rule"><span class="if">Fine or unsure</span><span class="to" aria-hidden="true">→</span><span class="then">Normal permission flow, then the tool runs</span></div>
+              <div class="rule"><span class="if">Clearly safe</span><span class="to" aria-hidden="true">→</span><span class="then ok">Runs, no permission prompt</span></div>
+              <div class="rule"><span class="if">Unsure</span><span class="to" aria-hidden="true">→</span><span class="then">Normal permission flow, then the tool runs</span></div>
               <div class="rule"><span class="if">Jev down, slow or no key</span><span class="to" aria-hidden="true">→</span><span class="then">Normal permission flow, then the tool runs</span></div>
             </div>
             <div class="stage">
               <h3><b>02</b> The output comes back</h3>
+              <div class="rule"><span class="if">Long, mostly unrelated</span><span class="to" aria-hidden="true">→</span><span class="then ok">Cut to the parts the request needs</span></div>
+              <div class="rule"><span class="if">The same failure, a third time</span><span class="to" aria-hidden="true">→</span><span class="then deny">Agent told to change approach</span></div>
               <div class="rule"><span class="if">Has instructions aimed at the model</span><span class="to" aria-hidden="true">→</span><span class="then deny">Model gets a "treat as data" note</span></div>
-              <div class="rule"><span class="if">Doesn't</span><span class="to" aria-hidden="true">→</span><span class="then ok">Output as is</span></div>
+              <div class="rule"><span class="if">None of these</span><span class="to" aria-hidden="true">→</span><span class="then ok">Output as is</span></div>
             </div>
           </div>
           <div class="side">
             <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>what claude sees on a deny</span></div><pre><span class="o">ohmyjev blocked this: irreversible (0.95): nothing would restore what this removes or overwrites.</span>
 Do not try to work around it with another command, another tool, a different path, or an encoding that does the same thing. Tell the user what was blocked and why, and ask whether to run it anyway. If they say yes, run exactly this again: their reply then lets it through.</pre></div>
             <div class="callout">
-              <h3>Fails open, never nags</h3>
-              <p>Middling answers, a slow or down Jev, a missing key and any error inside ohmyjev all fall through to the normal flow. It never asks you to approve anything, so bypass-mode agents run fine.</p>
+              <h3>Fails open, removes prompts</h3>
+              <p>Middling answers, a slow or down Jev, a missing key and any error inside ohmyjev all fall through to the normal flow. It never adds a prompt, only takes away the ones a safe call didn't need, so bypass-mode agents run fine.</p>
             </div>
             <div class="callout warn">
               <p>Jev can be wrong, so keep your deny rules in <code>settings.json</code>.</p>
@@ -542,9 +545,9 @@ Do not try to work around it with another command, another tool, a different pat
           </div>
         </div>
         <div class="grid g4 stats">
-          <div><b>~300<small>ms</small></b><span class="lbl">a typical Jev answer</span></div>
+          <div><b>~200<small>ms</small></b><span class="lbl">a typical Jev answer</span></div>
           <div><b>1.5<small>s</small></b><span class="lbl">slower than this, it fails open</span></div>
-          <div><b>0</b><span class="lbl">approval prompts</span></div>
+          <div><b>0</b><span class="lbl">prompts added</span></div>
           <div><b>&lt;1<small>¢</small></b><span class="lbl">per Jev call</span></div>
         </div>
       </div>
@@ -555,7 +558,7 @@ Do not try to work around it with another command, another tool, a different pat
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">04 / Install <span>4 steps</span></p><h2><em>install</em> it</h2>
-        <p class="lede">You need a Jev key: a TypeSafe key, or an OpenRouter key. These steps are for Claude Code; on pi or omp, pick yours in the <a href="#top">quick start</a>.</p>
+        <p class="lede">You need a Jev key: a TypeSafe key, or an OpenRouter key. These steps are for Claude Code; on Codex, pi or omp, pick yours in the <a href="#top">quick start</a>.</p>
       </div>
       <div class="body reveal main-first">
         <div class="grid g4">
