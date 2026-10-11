@@ -13,8 +13,8 @@ d88P  88888888 "Y88P"  888  888 888  888  888  "Y88888   888  "Y8888    Y88P
 ```
 
 <p align="center">
-  Guardrails for Claude Code, Codex, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.<br>
-  One mod that stops irreversible and data-leaking commands, even in bypass mode, and runs them when you say yes. It also flags prompt injection, pushes back on an unverified "done" and routes effort per turn.
+  <a href="https://typesafe.ai">Jev</a>, batteries included, for Claude Code, Codex, pi and omp.<br>
+  One install that makes your coding agent faster and safer: no permission prompts for safe commands, long output cut to what matters, the right skill loaded, and nothing irreversible until you say yes.
 </p>
 
 <p align="center">
@@ -40,13 +40,14 @@ d88P  88888888 "Y88P"  888  888 888  888  888  "Y88888   888  "Y8888    Y88P
 ---
 
 Jev is TypeSafe's decision model. You send it some state and a few typed questions, and it sends back probabilities
-in about 300 ms for a fraction of a cent. That's fast and cheap enough to ask about every command your agent runs, so
-ohmyjev does exactly that. It runs as in-process hooks inside Claude Code, which means no extra process and no server
-to keep up.
+in about 200 ms for a fraction of a cent. That's cheap enough to ask about every step your agent takes, so ohmyjev asks
+it everywhere a coding agent wastes your time or puts your work at risk: which command needs your OK, which part of a
+long log matters, which skill a prompt needs, whether the agent is going in circles, and whether a command can be
+undone. It runs as in-process hooks, so there's no extra process and no server to keep up.
 
-The bash gate is the core. An agent running unattended in bypass mode can't wipe a directory, force push over `main` or
-upload your keys, and it never stops to ask you for permission. When it blocks something, the agent tells you why and
-asks. Answer yes and that exact command runs. Everything else here builds on the same cheap, per-call judgment.
+Most of it makes the agent faster. The bash gate keeps it safe: an agent running unattended in bypass mode can't wipe a
+directory, force push over `main` or upload your keys. When it blocks something, the agent tells you why and asks.
+Answer yes and that exact command runs.
 
 ## Quick start
 
@@ -65,6 +66,19 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 
 ## What you get
 
+### Faster
+
+| Feature | What it does |
+|---|---|
+| **Auto-approve** | Where Claude Code or Codex would stop to ask you, a command Jev is sure only reads or can be undone, or an edit inside the repo with no credential in it, runs without the prompt. Plain reads like `ls`, `git status` and `grep` are cleared by code, with no Jev call at all. Off whenever you've set `policies`. |
+| **Trim long output** | A shell output over 12000 characters is split into parts, and one Jev call rates which parts your request needs: the error, the failing test, the value you asked for. The rest becomes one line saying how much was left out. A 20000-character test log came back as 4600 with the one failure in it. |
+| **Skill picker** | Claude Code sends the model a line for every skill you have on every prompt. ohmyjev leaves that list out and asks Jev whether a prompt needs a skill and which one, then names it beside your prompt. A second check makes sure the pick does the job, so a prompt no skill fits gets none. |
+| **Stuck check** | After the third failed tool call in a request, Jev reads the failures. If they repeat one approach and fail the same way, the agent is told to stop, read the error and try something else, or ask you. |
+| **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
+| **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
+
+### Safer
+
 | Feature | What it does |
 |---|---|
 | **Bash gate** | Denies a command when Jev rates it irreversible at 0.6 or more, or when it sends local files or secrets to an outside host (0.7), such as `curl` uploading `~/.ssh`. A command Jev calls irreversible with less confidence is denied too when it also aims to wipe something (0.7). Reversible work always passes, so deleting lines, dropping a co-author trailer or uninstalling a plugin goes through. Plain reads like `ls`, `git status` or `grep` skip Jev entirely: plain code checks them, so they cost nothing and wait for nothing. |
@@ -74,8 +88,11 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Your request** | Every gate also asks Jev whether your latest message asked for exactly this call. If it did (0.8), a gate's Jev deny lets the call through. So "delete the build folder" or "force push it" works, while the same command picked by the agent on its own is still denied. After a block, a plain "yes" works too: the gate shows Jev the call it just blocked next to your reply. Policy and path denies always stand. |
 | **Injection screen** | When output from Bash, WebFetch, an MCP tool, or a Read outside the repo has instructions aimed at the model, it adds a note telling the model to treat that output as data. |
 | **Done-check** | If the agent says it's done but nothing shows it ran a check, it blocks the stop once and tells the agent to verify. A turn that ran no tools is never blocked, since there was nothing to verify. |
-| **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
-| **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
+
+### Tools and commands
+
+| Feature | What it does |
+|---|---|
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
 | **`browse`** | A tool that does a web task in a headless browser, with Jev picking each click and field: a Google Flights search in about 6 seconds. Off until you turn on `browse`. |
 | **`/omj`** | This session's Jev calls, errors, cost, median latency and denies, and where the key comes from. It never prints the key. `/omj config` lists and changes settings. `/omj stats` opens a dashboard of every session in your browser. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
@@ -86,18 +103,21 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 flowchart LR
     A[Claude calls a tool] --> B{ohmyjev asks Jev}
     B -- clearly risky --> C[Denied, with the reason]
+    B -- clearly safe --> E
     B -- fine or unsure --> D[Claude Code's normal permission flow]
     B -- Jev down, slow or no key --> D
     D --> E[Tool runs]
-    E --> F{Output has instructions<br>aimed at the model?}
+    E --> T[Long output trimmed<br>to what the request needs]
+    T --> F{Output has instructions<br>aimed at the model?}
     F -- yes --> G[Model gets a<br>'treat as data' note]
     F -- no --> H[Output as is]
 ```
 
-Anything ohmyjev doesn't deny just goes on to Claude Code's normal permission flow. That covers middling answers, Jev
-being down or slower than `timeoutMs` (1.5 s), a missing key, and any error inside ohmyjev. It never stops to ask you to approve
-anything, so it works fine with agents running in bypass mode. Jev can be wrong though, so keep your deny rules in
-`settings.json`.
+Anything ohmyjev neither denies nor clears goes on to Claude Code's normal permission flow. That covers middling
+answers, Jev being down or slower than `timeoutMs` (1.5 s), a missing key, and any error inside ohmyjev. It never adds a
+prompt of its own, so it works fine with agents running in bypass mode. It only removes prompts: auto-approve answers
+"allow" only where the engine was about to ask and your settings left the call open. Jev can be wrong though, so keep
+your deny rules in `settings.json`.
 
 ## Install
 
@@ -160,8 +180,9 @@ codex plugin add ohmyjev@ohmyjev
 ```
 
 Then start Codex and run `/hooks` once: Codex skips a plugin's hooks until you trust them. ohmyjev needs Node on your
-`PATH` and the key in the shell that starts Codex. It gates `Bash`, `apply_patch` edits and MCP calls, screens their
-output, and runs the done-check. Saying yes after a block works the same way. Codex hooks can't change the model or add
+`PATH` and the key in the shell that starts Codex. It gates `Bash`, `apply_patch` edits and MCP calls, answers
+Codex's permission prompts for calls Jev cleared, trims long output, screens it, catches repeated failures, and runs the
+done-check. Saying yes after a block works the same way. Codex hooks can't change the model or add
 a tool, so there is no router, no `ask_jev` and no `/omj` command. Put settings in `~/.codex/ohmyjev.json`, using the
 names in [Settings](#settings):
 
@@ -210,6 +231,10 @@ pi has no settings screen for extensions, so put yours under an `ohmyjev` key in
 | Exfil gate | WebFetch, MCP tools | MCP tools | `read` of a URL, MCP tools | MCP tools (pi has no fetch tool; `curl` goes through the bash gate) |
 | Injection screen | Bash, WebFetch, MCP, Reads outside the repo | Bash, MCP | `bash`, `github`, URL reads, MCP, reads outside the repo | `bash`, `powershell`, MCP, reads outside the repo |
 | Done-check | ✓ | ✓ | ✓ | ✓ |
+| Auto-approve | ✓ | ✓ (PermissionRequest) | none: omp doesn't ask | none: pi doesn't ask |
+| Trim long output | Bash | Bash (the trimmed text replaces the result) | `bash` | `bash`, `powershell` |
+| Stuck check | ✓ | ✓ | ✓ | ✓ |
+| Skill picker | ✓ | none: hooks can't remove the skill list | none | none |
 | Router effort | ✓ | none: hooks can't set it | ✓ (left alone while you're on `auto`) | ✓ |
 | Router subagent model | general-purpose subagents | none | subagents on the default `task` role | none: pi has no subagents |
 | Router without a key | Claude Code's built-in classifier, up only | none | off: omp has no separate classifier call for extensions | the cheapest model you've set up, up only |
@@ -380,6 +405,10 @@ one for the session. To keep a change, run `/plugin configure ohmyjev@ohmyjev` i
 | `autoCompact` | on | Compacts when the task changes. `compactMinPercent` (40) sets how full the context has to be first. |
 | `askJev` | on | Gives the model the `ask_jev` tool. |
 | `browse` | off | Gives the model the `browse` tool. Needs uv and a Chromium-based browser. |
+| `autoApprove` | on | Skips the permission prompt for a call Jev is sure is safe. `approveConfidence` (0.9) and `approveRiskMax` (0.2) set how sure. |
+| `trimOutput` | on | Cuts long shell output to what the request needs. `trimOver` (12000 characters) and `trimKeep` (0.3) tune it. |
+| `stuckCheck` | on | Tells the agent to change course when its failures repeat. `stuck` (0.7) sets how sure Jev must be. |
+| `skillPick` | on | Claude Code: leaves the skill list out and names the one skill a prompt needs. `skillGate` (0.3) and `skillMin` (0.4) tune it. |
 | `policies` | empty | Your own rules, separated by `;`. |
 | `allowPaths` | `~/.claude;$TMPDIR;/tmp` | Places outside the repo where writes are allowed. ohmyjev ignores any entry with `..` in it. You don't need it for a sibling worktree or another git repo the agent `cd`s into: those count as the repo. |
 | `fastModel`, `balancedModel`, `deepModel` | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | The model id for each router tier. |
@@ -410,6 +439,9 @@ a fixed size:
 | Injection screen | The tool's output (up to 6000 characters), from Bash, WebFetch, MCP tools and Reads outside the repo |
 | Done-check | The current request (600), up to five earlier requests (200 each), up to 20 of this turn's tool calls with their input (200 each) and outcome, and Claude's last message (1500) |
 | Router | The request (up to 1500 characters) |
+| Trim long output | Your latest message (1500) and the long output, in parts of about 1500 characters, up to 24 parts |
+| Stuck check | Your latest message (600) and the last six failed calls: each one's input and the end of its output (300 each) |
+| Skill picker | Each prompt (1500) with every skill's name and one-line description (300 each); then the picked skill's description (600) |
 | `ask_jev` | The model's question, any text it passes (up to 20000 characters) and the repo files it names (8000 each, 80000 in total). It never sends files outside the repo |
 | `browse` | The goal and URL to the exfil gate; then, each step, the page's controls and visible text (6000) and the goal to Jev, and the page's text to the injection screen. The websites see the browser like any visitor |
 

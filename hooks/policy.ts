@@ -25,6 +25,17 @@ export const DEFAULTS = {
   doneAsksUserMax: 0.5,
   exfil: 0.7,
   requested: 0.8,
+  autoApprove: true,
+  stuckCheck: true,
+  skillPick: true,
+  skillGate: 0.3,
+  skillMin: 0.4,
+  trimOutput: true,
+  trimOver: 12000,
+  trimKeep: 0.3,
+  stuck: 0.7,
+  approveConfidence: 0.9,
+  approveRiskMax: 0.2,
   askJev: true,
   browse: false,
   autoCompact: true,
@@ -185,12 +196,33 @@ export const STOP_Q: Questions = {
   claimed_done: noul('Does `last_assistant_message` say the task in `current_request` is complete?'),
   verified: noul(
     'Is there evidence the work was checked?',
-    'Tests, a build or the program ran and did not fail, output was quoted or inspected; `tools_this_turn` shows such a check with outcome ok',
+    'Tests, a build or the program ran and did not fail, output was quoted or inspected; `tools_this_turn` shows such a check with outcome ok and an `output` that confirms it',
     'Only claims success, edited without running or inspecting anything, or every check is pending, backgrounded or failed',
   ),
   asks_user: noul('Does `last_assistant_message` end by asking the user a question or reporting a blocker it cannot resolve?'),
   at_boundary: noul('Did the last turn finish a unit of work rather than stop mid-step?'),
 }
+export const STUCK_Q: Questions = {
+  stuck: noul(
+    'Do the attempts in `failures` repeat one approach and fail the same way, so trying it again will not help?',
+    'The same command, edit or fix, re-run with small changes, and the same error or the same kind of failure each time',
+    'Different approaches, different errors, or each attempt gets further than the last',
+  ),
+}
+/** A failed tool call, as the stuck check reads it. */
+export type Failure = { tool: string; input: string; output: string }
+export const failureOf = (tool: string, input: unknown, output: unknown): Failure =>
+  ({ tool, input: clip(typeof input === 'string' ? input : JSON.stringify(input), 300), output: clipTail(output, 300) })
+/** Ask after the third failure in a request, then after every third more: rarely, and only while it keeps failing. */
+export const stuckDue = (failures: number, askedAt: number): boolean => failures >= 3 && failures - askedAt >= 3
+export const stuckState = (request: string, failures: Failure[]) => ({ current_request: clip(request, 600), failures: failures.slice(-6) })
+export function judgeStuck(a: Answers, c: Config, n: number): string | null {
+  const p = nv(a, 'stuck')
+  return p >= c.stuck
+    ? `[ohmyjev] The last ${n} failed attempts repeat one approach and fail the same way (${f2(p)}). Stop repeating it: read the error, try a different approach, or ask the user.`
+    : null
+}
+
 export const SWITCHED_Q: Questions = {
   switched_gears: noul('Is `current_request` a different task from `previous_requests`, so the earlier work is no longer needed?'),
 }
@@ -203,6 +235,11 @@ export const keepInstructions = (request: string): string =>
 export const clip = (text: unknown, n: number): string => {
   const s = typeof text === 'string' ? text : ''
   return s.length <= n ? s : s.slice(0, n - 1) + '…'
+}
+/** The end of a tool's output, where a test run's verdict and an error's last line are. */
+export const clipTail = (text: unknown, n: number): string => {
+  const s = typeof text === 'string' ? text.trim() : ''
+  return s.length <= n ? s : '…' + s.slice(-(n - 1))
 }
 export const sanitizeSid = (sid: string): string => sid.replace(/[^\w-]/g, '') || 'unknown'
 export const denyText = (reason: string): string => `ohmyjev blocked this: ${reason}. ${BLOCK_NOTICE}`
@@ -286,6 +323,21 @@ export function gateBash(a: Answers, c: Config): Judged {
   const out = nv(a, 'exfiltrates')
   if (out >= c.exfil) return unlessRequested({ verdict: 'deny', reason: `sends local data out (${f2(out)}): keep local files and credentials local` }, a, c)
   return { verdict: null, reason: `${effect.choice} (${f2(effect.confidence)}), destructive ${f2(destructive)}, exfil ${f2(out)}` }
+}
+
+/**
+ * Whether the host may skip asking the person: Jev is sure the command only reads or makes a change git or a reinstall
+ * undoes, and sees no wipe and no data leaving. Policies make every call worth a look, so nothing is approved then.
+ */
+export function approveBash(a: Answers, c: Config): boolean {
+  const effect = ch(a, 'effect')
+  return c.autoApprove && !splitList(c.policies).length && effect.choice !== 'irreversible' && effect.confidence >= c.approveConfidence &&
+    nv(a, 'destructive_intent') < c.approveRiskMax && nv(a, 'exfiltrates') < c.approveRiskMax
+}
+/** The same for an edit inside the repo: no credential in it, not a secrets file. */
+export function approveWrite(a: Answers, c: Config): boolean {
+  const kind = ch(a, 'kind')
+  return c.autoApprove && !splitList(c.policies).length && nv(a, 'contains_secret') < c.approveRiskMax && kind.choice !== 'secrets'
 }
 
 export function gateWrite(a: Answers, c: Config): Judged {
@@ -723,3 +775,87 @@ export function browseReply(stdout: string, stderr = ''): string {
     return JSON.stringify({ error: `browse could not run: ${why}. Chrome needs remote debugging allowed the first time.` })
   }
 }
+
+// --- output trim: a long tool output cut to the parts the request needs ---
+
+const TRIM_CHUNK = 1500
+const TRIM_CHUNKS = 24
+
+/** The output in line-aligned chunks of about TRIM_CHUNK characters, at most TRIM_CHUNKS of them; none when short. */
+export function trimChunks(output: string, c: Config): string[] {
+  if (!c.trimOutput || output.length <= c.trimOver) return []
+  const chunks: string[] = []
+  let cur = ''
+  for (const line of output.split('\n')) {
+    if (cur && cur.length + line.length + 1 > TRIM_CHUNK) {
+      chunks.push(cur)
+      cur = ''
+    }
+    cur = cur ? `${cur}\n${line}` : line
+  }
+  if (cur) chunks.push(cur)
+  return chunks.length >= 4 && chunks.length <= TRIM_CHUNKS ? chunks : []
+}
+
+/** One question per chunk, all in one Jev call; the first and last chunks are always kept and not asked about. */
+export function trimRequest(request: string, chunks: string[]) {
+  const middle = chunks.slice(1, -1)
+  const questions: Questions = Object.fromEntries(middle.map((_, i) => [`c${i + 1}`, noul(
+    `Does \`chunks.c${i + 1}\` hold something \`request\` needs: an error, a failing test, a result, or the data asked for?`,
+    'An error or warning, a failure, a value or line the request is about',
+    'Progress lines, passing items, boilerplate or data unrelated to the request',
+  )]))
+  return { state: { request: clip(request, 1500), chunks: Object.fromEntries(middle.map((t, i) => [`c${i + 1}`, t])) }, questions }
+}
+
+/** The output with the chunks Jev rated unrelated replaced by one line each run; null when too little would go. */
+export function trimmed(chunks: string[], a: Answers, c: Config): string | null {
+  const keep = chunks.map((_, i) => i === 0 || i === chunks.length - 1 || nv(a, `c${i}`) >= c.trimKeep)
+  const total = chunks.reduce((n, t) => n + t.length, 0)
+  const kept = chunks.reduce((n, t, i) => n + (keep[i] ? t.length : 0), 0)
+  if (kept > total * 0.7) return null
+  const out: string[] = []
+  for (let i = 0; i < chunks.length; i++) {
+    if (keep[i]) out.push(chunks[i]!)
+    else if (keep[i - 1] !== false) {
+      let lines = 0
+      for (let j = i; j < chunks.length && !keep[j]; j++) lines += chunks[j]!.split('\n').length
+      out.push(`[ohmyjev: ${lines} lines left out as unrelated to the request. Rerun the command with grep or sed -n to see them.]`)
+    }
+  }
+  return out.join('\n')
+}
+
+// --- skill picker: the skill listing out of the prompt, Jev naming the one skill a request needs ---
+
+export type Skill = { name: string; description: string }
+
+/** One request: which skill fits, and three questions about whether the request needs one at all (TypeSafe's cookbook). */
+export const skillQuestions = (skills: readonly Skill[]): Questions => ({
+  which: choice('Which skill in the list best fits `request`?', Object.fromEntries(skills.slice(0, 100).map(s => [s.name, clip(s.description, 300) || s.name]))),
+  acts_on_user_system: noul('Is the assistant asked to act on the user\'s files, accounts, devices or services, rather than only to explain or advise?'),
+  would_follow_documented_procedure: noul('Would a careful expert follow a specific documented procedure or set of commands, rather than answer from general understanding?'),
+  prose_suffices: noul('Could a knowledgeable generalist fully satisfy `request` in prose, with no tools and no access to the user\'s files?'),
+})
+
+/** The skill to name, when the request needs one (the gate's mean) and Jev's pick is clear enough; else null. */
+export function pickSkill(a: Answers, c: Config): { name: string; gate: number; confidence: number } | null {
+  const gate = (nv(a, 'acts_on_user_system') + nv(a, 'would_follow_documented_procedure') + (1 - nv(a, 'prose_suffices'))) / 3
+  const w = ch(a, 'which')
+  if (!w || gate < c.skillGate || w.confidence < c.skillMin) return null
+  return { name: w.choice, gate, confidence: w.confidence }
+}
+
+/** The second request: does the picked skill do the specific thing asked? It can say no, so an only option isn't forced. */
+export const fitsQuestion = (s: Skill): Questions => ({
+  fits: noul(
+    `Does the skill "${s.name}" (${clip(s.description, 600)}) do the specific thing \`request\` asks for?`,
+    'It is the documented procedure for exactly this task',
+    'It is about something else, only nearby, or the request needs no procedure',
+  ),
+})
+export const skillFits = (a: Answers, c: Config): boolean => nv(a, 'fits') >= c.skillGate
+
+export const skillNote = (name: string): string =>
+  `<skill_relevance>\nRelevant to the current request: the ${name} skill. Load it with the Skill tool (${name}) before you start, and ` +
+  'follow it. Ignore this if it does not fit what the user actually asked for.\n</skill_relevance>'

@@ -22,6 +22,17 @@ var DEFAULTS = {
   doneAsksUserMax: 0.5,
   exfil: 0.7,
   requested: 0.8,
+  autoApprove: true,
+  stuckCheck: true,
+  skillPick: true,
+  skillGate: 0.3,
+  skillMin: 0.4,
+  trimOutput: true,
+  trimOver: 12000,
+  trimKeep: 0.3,
+  stuck: 0.7,
+  approveConfidence: 0.9,
+  approveRiskMax: 0.2,
   askJev: true,
   browse: false,
   autoCompact: true,
@@ -110,16 +121,30 @@ var SCREEN_Q = {
 };
 var STOP_Q = {
   claimed_done: noul("Does `last_assistant_message` say the task in `current_request` is complete?"),
-  verified: noul("Is there evidence the work was checked?", "Tests, a build or the program ran and did not fail, output was quoted or inspected; `tools_this_turn` shows such a check with outcome ok", "Only claims success, edited without running or inspecting anything, or every check is pending, backgrounded or failed"),
+  verified: noul("Is there evidence the work was checked?", "Tests, a build or the program ran and did not fail, output was quoted or inspected; `tools_this_turn` shows such a check with outcome ok and an `output` that confirms it", "Only claims success, edited without running or inspecting anything, or every check is pending, backgrounded or failed"),
   asks_user: noul("Does `last_assistant_message` end by asking the user a question or reporting a blocker it cannot resolve?"),
   at_boundary: noul("Did the last turn finish a unit of work rather than stop mid-step?")
 };
+var STUCK_Q = {
+  stuck: noul("Do the attempts in `failures` repeat one approach and fail the same way, so trying it again will not help?", "The same command, edit or fix, re-run with small changes, and the same error or the same kind of failure each time", "Different approaches, different errors, or each attempt gets further than the last")
+};
+var failureOf = (tool, input, output) => ({ tool, input: clip(typeof input === "string" ? input : JSON.stringify(input), 300), output: clipTail(output, 300) });
+var stuckDue = (failures, askedAt) => failures >= 3 && failures - askedAt >= 3;
+var stuckState = (request, failures) => ({ current_request: clip(request, 600), failures: failures.slice(-6) });
+function judgeStuck(a, c, n) {
+  const p = nv(a, "stuck");
+  return p >= c.stuck ? `[ohmyjev] The last ${n} failed attempts repeat one approach and fail the same way (${f2(p)}). Stop repeating it: read the error, try a different approach, or ask the user.` : null;
+}
 var SWITCHED_Q = {
   switched_gears: noul("Is `current_request` a different task from `previous_requests`, so the earlier work is no longer needed?")
 };
 var clip = (text, n) => {
   const s = typeof text === "string" ? text : "";
   return s.length <= n ? s : s.slice(0, n - 1) + "…";
+};
+var clipTail = (text, n) => {
+  const s = typeof text === "string" ? text.trim() : "";
+  return s.length <= n ? s : "…" + s.slice(-(n - 1));
 };
 var sanitizeSid = (sid) => sid.replace(/[^\w-]/g, "") || "unknown";
 var denyText = (reason) => `ohmyjev blocked this: ${reason}. ${BLOCK_NOTICE}`;
@@ -252,6 +277,14 @@ function gateBash(a, c) {
     return unlessRequested({ verdict: "deny", reason: `sends local data out (${f2(out)}): keep local files and credentials local` }, a, c);
   return { verdict: null, reason: `${effect.choice} (${f2(effect.confidence)}), destructive ${f2(destructive)}, exfil ${f2(out)}` };
 }
+function approveBash(a, c) {
+  const effect = ch(a, "effect");
+  return c.autoApprove && !splitList(c.policies).length && effect.choice !== "irreversible" && effect.confidence >= c.approveConfidence && nv(a, "destructive_intent") < c.approveRiskMax && nv(a, "exfiltrates") < c.approveRiskMax;
+}
+function approveWrite(a, c) {
+  const kind = ch(a, "kind");
+  return c.autoApprove && !splitList(c.policies).length && nv(a, "contains_secret") < c.approveRiskMax && kind.choice !== "secrets";
+}
 function gateWrite(a, c) {
   const kind = ch(a, "kind");
   const secret = nv(a, "contains_secret");
@@ -381,6 +414,52 @@ function summarize(log) {
 `);
 }
 var BROWSE_DESCRIPTION = "Do a task in a real browser tab, fast: Jev picks each click, field and option from the page's controls (about one " + 'second per step). Give a starting URL and one narrow goal, like "find one-way flights Zurich to London on Sept 20, ' + 'stop when results show" or "open the install section of these docs", with the text to type in `values`. Returns ' + "where it ended, the steps taken and the visible text. Runs in its own headless browser, signed in to nothing. Use WebFetch for a page you only need to read.";
+var TRIM_CHUNK = 1500;
+var TRIM_CHUNKS = 24;
+function trimChunks(output, c) {
+  if (!c.trimOutput || output.length <= c.trimOver)
+    return [];
+  const chunks = [];
+  let cur = "";
+  for (const line of output.split(`
+`)) {
+    if (cur && cur.length + line.length + 1 > TRIM_CHUNK) {
+      chunks.push(cur);
+      cur = "";
+    }
+    cur = cur ? `${cur}
+${line}` : line;
+  }
+  if (cur)
+    chunks.push(cur);
+  return chunks.length >= 4 && chunks.length <= TRIM_CHUNKS ? chunks : [];
+}
+function trimRequest(request, chunks) {
+  const middle = chunks.slice(1, -1);
+  const questions = Object.fromEntries(middle.map((_, i) => [`c${i + 1}`, noul(`Does \`chunks.c${i + 1}\` hold something \`request\` needs: an error, a failing test, a result, or the data asked for?`, "An error or warning, a failure, a value or line the request is about", "Progress lines, passing items, boilerplate or data unrelated to the request")]));
+  return { state: { request: clip(request, 1500), chunks: Object.fromEntries(middle.map((t, i) => [`c${i + 1}`, t])) }, questions };
+}
+function trimmed(chunks, a, c) {
+  const keep = chunks.map((_, i) => i === 0 || i === chunks.length - 1 || nv(a, `c${i}`) >= c.trimKeep);
+  const total = chunks.reduce((n, t) => n + t.length, 0);
+  const kept = chunks.reduce((n, t, i) => n + (keep[i] ? t.length : 0), 0);
+  if (kept > total * 0.7)
+    return null;
+  const out = [];
+  for (let i = 0;i < chunks.length; i++) {
+    if (keep[i])
+      out.push(chunks[i]);
+    else if (keep[i - 1] !== false) {
+      let lines = 0;
+      for (let j = i;j < chunks.length && !keep[j]; j++)
+        lines += chunks[j].split(`
+`).length;
+      out.push(`[ohmyjev: ${lines} lines left out as unrelated to the request. Rerun the command with grep or sed -n to see them.]`);
+    }
+  }
+  return out.join(`
+`);
+}
 
 // adapters/shared.ts
 import { execFile } from "node:child_process";
@@ -853,10 +932,40 @@ async function pathAllowed(spelled, cwd, root, c, env, withAllowPaths = true) {
   return targets.every((t) => t !== null && roots.some((r) => isUnder(t, r)));
 }
 var ASK_DESCRIPTION = "Ask Jev, a fast (~300 ms) and nearly free decision model, one question about repo files or text: yes/no (noul), " + "multiple choice (choice), or a position on levels (score). Use it for a judgment ABOUT content without reading it " + "into your context: is this file relevant, does this log show the failure, which of these is riskiest. Read the file " + "yourself when you need to edit or quote it. Values under ~0.7 mean Jev is unsure.";
+var newStuck = () => ({ failures: [], askedAt: 0 });
+async function stuckNote(x, st, request, tool, input, output) {
+  if (!x.c.enabled || !x.c.stuckCheck)
+    return null;
+  st.failures.push(failureOf(tool, input, output));
+  if (!stuckDue(st.failures.length, st.askedAt))
+    return null;
+  st.askedAt = st.failures.length;
+  const d = await x.decide("tool.result", "stuck", stuckState(request, st.failures), STUCK_Q);
+  if (!d)
+    return null;
+  const note = judgeStuck(d.answers, x.c, st.failures.length);
+  x.record(d, note ? "flag" : null, note ? "stuck" : "not stuck");
+  return note;
+}
+async function trimOutput(x, request, output) {
+  if (!x.c.enabled)
+    return null;
+  const chunks = trimChunks(output, x.c);
+  if (!chunks.length)
+    return null;
+  const { state, questions } = trimRequest(request, chunks);
+  const d = await x.decide("tool.result", "trim", state, questions);
+  if (!d)
+    return null;
+  const out = trimmed(chunks, d.answers, x.c);
+  x.record(d, null, out ? `trimmed ${output.length} to ${out.length} characters` : "kept whole");
+  return out;
+}
 
 // adapters/codex.ts
 var CLIP = 16000;
-var EMPTY = { request: "", previous: [], count: 0, blockedBefore: "", lastBlocked: "", tools: [], pushedBackAt: -1 };
+var EMPTY = { request: "", previous: [], count: 0, blockedBefore: "", lastBlocked: "", tools: [], pushedBackAt: -1, approved: [], stuck: { failures: [], askedAt: 0 } };
+var approvalKey = (tool, input) => `${tool}\x00${str(input, "command")}`;
 var str = (o, k) => typeof o[k] === "string" ? o[k] : "";
 var obj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 async function config(env) {
@@ -901,7 +1010,7 @@ async function handle(input, env, fetchImpl) {
       return;
     if (st.request)
       st.previous = [...st.previous, clip(st.request, 200)].slice(-5);
-    Object.assign(st, { request: prompt, count: st.count + 1, blockedBefore: st.lastBlocked, lastBlocked: "", tools: [] });
+    Object.assign(st, { request: prompt, count: st.count + 1, blockedBefore: st.lastBlocked, lastBlocked: "", tools: [], stuck: newStuck() });
     await save(env, sid, st);
     return;
   }
@@ -909,7 +1018,16 @@ async function handle(input, env, fetchImpl) {
   const tool = str(input, "tool_name");
   const toolInput = obj(input.tool_input);
   if (event === "PreToolUse") {
-    const blocked = async (j) => {
+    const approve = async () => {
+      if (!c.autoApprove)
+        return;
+      st.approved = [...st.approved, approvalKey(tool, toolInput)].slice(-20);
+      await save(env, sid, st);
+      return;
+    };
+    const blocked = async (j, safe = false) => {
+      if (j.verdict === null && safe)
+        return approve();
       if (j.verdict !== "deny")
         return;
       st.lastBlocked = callSummary(tool, toolInput);
@@ -919,14 +1037,14 @@ async function handle(input, env, fetchImpl) {
     if (tool === "Bash" && c.bashGate) {
       const command = str(toolInput, "command");
       if (plainRead(command, c))
-        return;
+        return approve();
       const state = withPolicies({ command: clip(command, CLIP), cwd, ...command.length > CLIP ? { truncated: true } : {} }, c, st.request, st.blockedBefore);
       const d = await x.decide("tool.call", tool, state, withPolicyQ(BASH_Q, c, st.request));
       if (!d)
         return;
       const j = gateBash(d.answers, c);
       x.record(d, j.verdict, j.reason);
-      return blocked(j);
+      return blocked(j, approveBash(d.answers, c));
     }
     if (tool === "apply_patch" && c.writeGate) {
       const patch = str(toolInput, "command");
@@ -942,7 +1060,7 @@ async function handle(input, env, fetchImpl) {
         return;
       const j = gateWrite(d.answers, c);
       x.record(d, j.verdict, j.reason);
-      return blocked(j);
+      return blocked(j, approveWrite(d.answers, c));
     }
     if (tool.startsWith("mcp__") && c.exfilGate) {
       const state = withPolicies({ tool, input: clip(JSON.stringify(toolInput), 4000) }, c, st.request, st.blockedBefore);
@@ -955,22 +1073,40 @@ async function handle(input, env, fetchImpl) {
     }
     return;
   }
+  if (event === "PermissionRequest") {
+    const key = approvalKey(tool, toolInput);
+    if (!c.autoApprove || !st.approved.includes(key))
+      return;
+    st.approved = st.approved.filter((k) => k !== key);
+    await save(env, sid, st);
+    return { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } };
+  }
   if (event === "PostToolUse") {
     const response = input.tool_response;
     const code = obj(response).exit_code ?? obj(response).exitCode;
-    st.tools = [...st.tools, { tool, input: clip(JSON.stringify(toolInput), 200), outcome: typeof code === "number" && code !== 0 ? "failed" : "ok" }].slice(-20);
+    const r = obj(response);
+    const shown = typeof response === "string" ? response : typeof r.output === "string" ? r.output : typeof r.stdout === "string" ? r.stdout : JSON.stringify(response ?? "");
+    st.tools = [...st.tools, { tool, input: clip(JSON.stringify(toolInput), 200), outcome: typeof code === "number" && code !== 0 ? "failed" : "ok", output: clipTail(shown, 300) }].slice(-20);
+    const failed = typeof code === "number" && code !== 0;
+    const stuck = failed ? await stuckNote(x, st.stuck, st.request, tool, toolInput, shown) : null;
     await save(env, sid, st);
-    if (!c.injectionScreen || !(tool === "Bash" || tool.startsWith("mcp__")))
-      return;
-    const text = typeof response === "string" ? response : JSON.stringify(response ?? "");
-    if (!text.trim())
-      return;
-    const d = await x.decide("tool.result", tool, { tool, content: clip(text, 6000) }, SCREEN_Q);
+    const notes = stuck ? [stuck] : [];
+    const cut = tool === "Bash" ? await trimOutput(x, st.request, shown) : null;
+    if (cut)
+      return { decision: "block", reason: [cut, ...notes].join(`
+`) };
+    const context = () => notes.length ? { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: notes.join(`
+`) } } : undefined;
+    if (!c.injectionScreen || !(tool === "Bash" || tool.startsWith("mcp__")) || !shown.trim())
+      return context();
+    const d = await x.decide("tool.result", tool, { tool, content: clip(shown, 6000) }, SCREEN_Q);
     if (!d)
-      return;
+      return context();
     const s = screen(d.answers, c);
     x.record(d, s.flagged ? "flag" : null, s.reason);
-    return s.flagged ? { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: s.note } } : undefined;
+    if (s.flagged)
+      notes.push(s.note);
+    return context();
   }
   if (event === "Stop") {
     if (!c.doneCheck || input.stop_hook_active === true || st.pushedBackAt === st.count)

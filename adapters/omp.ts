@@ -4,13 +4,13 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, DEFAULTS, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead, configCommand, applyPatchPaths,
+  clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, clipTail, plainRead, configCommand, applyPatchPaths,
   BROWSE_DESCRIPTION, OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
   keepInstructions, modelOf, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
 import {
-  ASK_DESCRIPTION, Session, answerAsk, runBrowse, keyOf, pathAllowed, repoRoot,
+  ASK_DESCRIPTION, Session, answerAsk, newStuck, runBrowse, stuckNote, trimOutput, keyOf, pathAllowed, repoRoot,
   type Env, type Fetch,
 } from './shared.ts'
 
@@ -193,16 +193,18 @@ function sameModel(left: HostModel | undefined, right: HostModel | undefined): b
   )
 }
 
-function toolState(messages: unknown[], after: number): Array<{ tool: string; input: string; outcome: 'ok' | 'failed' | 'pending' }> {
+function toolState(messages: unknown[], after: number): Array<{ tool: string; input: string; outcome: 'ok' | 'failed' | 'pending'; output: string }> {
   const tail = messages.slice(after)
   const outcomes = new Map<string, 'ok' | 'failed'>()
+  const outputs = new Map<string, string>()
   for (const message of tail) {
     const m = object(message)
     if (m.role !== 'toolResult') continue
     const id = typeof m.toolCallId === 'string' ? m.toolCallId : ''
     if (id) outcomes.set(id, m.isError === true ? 'failed' : 'ok')
+    if (id) outputs.set(id, clipTail(text(m.content), 300))
   }
-  const calls: Array<{ tool: string; input: string; outcome: 'ok' | 'failed' | 'pending' }> = []
+  const calls: Array<{ tool: string; input: string; outcome: 'ok' | 'failed' | 'pending'; output: string }> = []
   for (const message of tail) {
     const m = object(message)
     if (m.role !== 'assistant' || !Array.isArray(m.content)) continue
@@ -214,6 +216,7 @@ function toolState(messages: unknown[], after: number): Array<{ tool: string; in
         tool: typeof p.name === 'string' ? p.name : '',
         input: clip(safeJson(p.arguments), 200),
         outcome: outcomes.get(id) ?? 'pending',
+        output: outputs.get(id) ?? '',
       })
     }
   }
@@ -247,6 +250,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     let liveRequest = ''
     let lastBlocked = '' // the call a gate denied this turn
     let blockedBefore = '' // what was denied in the turn before this request: a "yes" confirms it
+    let stuck = newStuck()
     let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
     let compactPending = false
     let classifiedPrompt: string | undefined
@@ -573,23 +577,30 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     pi.on('tool_result', async (rawEvent, ctx) => {
       try {
         touch(ctx)
-        if (!session || !c.enabled || !c.injectionScreen) return
+        if (!session || !c.enabled) return
         const event = rawEvent as ToolResult
         const tool = event.toolName
         const input = object(event.input)
+        let resultText = event.content.map(part => part.type === 'text' && typeof part.text === 'string' ? part.text : '').filter(Boolean).join('\n')
+        const cut = tool === 'bash' ? await trimOutput(session, userRequest, resultText) : null
+        if (cut) resultText = cut
+        const base = cut ? [...event.content.filter(part => part.type !== 'text'), { type: 'text', text: cut }] : event.content
+        const stuckText = (event as { isError?: boolean }).isError ? await stuckNote(session, stuck, userRequest, tool, input, resultText) : null
+        const content = stuckText ? [...base, { type: 'text', text: stuckText }] : base
+        const changed = stuckText || cut
+        if (!c.injectionScreen) return changed ? { content } : undefined
         let shouldScreen = tool === 'bash' || tool === 'github' || exfilTool(tool, input)
         if (tool === 'read' && !urlRead(tool, input) && c.screenReads) {
           const path = string(input, 'path')
           shouldScreen = !sessionLocalWrite(path) && !(await pathAllowed(path, ctx.cwd, root, c, env))
         }
-        if (!shouldScreen) return
-        const resultText = event.content.map(part => part.type === 'text' && typeof part.text === 'string' ? part.text : '').filter(Boolean).join('\n')
-        if (!resultText.trim()) return
+        if (!shouldScreen || !resultText.trim()) return changed ? { content } : undefined
         const d = await session.decide('tool_result', tool, { tool, content: clip(resultText, 6000) }, SCREEN_Q)
-        if (!d) return
+        if (!d) return changed ? { content } : undefined
         const screened = screen(d.answers, c)
         session.record(d, screened.flagged ? 'flag' : null, screened.reason)
-        if (screened.flagged) return { content: [...event.content, { type: 'text', text: screened.note }] }
+        if (screened.flagged) return { content: [...content, { type: 'text', text: screened.note }] }
+        return changed ? { content } : undefined
       } catch {
         return
       }
@@ -650,6 +661,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
         userEffort = userThinking(ctx)
         const prompt = typeof rawEvent.prompt === 'string' ? rawEvent.prompt : ''
         if (prompt.trim() && !/^\/\S+\s*$/.test(prompt.trim())) {
+          stuck = newStuck()
           userRequest = prompt
           blockedBefore = lastBlocked
           lastBlocked = ''

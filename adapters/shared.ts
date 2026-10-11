@@ -9,7 +9,7 @@ import { dashboardHtml } from '../hooks/dashboard.ts'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from '../hooks/jev.ts'
 import {
   BROWSE_TIMEOUT_MS, DASHBOARD, EMPTY_SESSION, EXFIL_Q, SCREEN_Q, browseCommand, browseReply, denyText, gateExfil, screen, withPolicies, withPolicyQ, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, parseLog, parseWorktrees, rawAbsolute, sanitizeSid,
-  splitList, statusText, summarize, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
+  STUCK_Q, trimChunks, trimRequest, trimmed, failureOf, judgeStuck, stuckDue, stuckState, splitList, statusText, summarize, type Failure, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
 } from '../hooks/policy.ts'
 
 export type Env = Readonly<Record<string, string | undefined>>
@@ -332,4 +332,38 @@ export async function runBrowse(
   const s = screen(d.answers, c)
   x.record(d, s.flagged ? 'flag' : null, s.reason)
   return { text: s.flagged ? `${text}\n${s.note}` : text }
+}
+
+// --- stuck check: the same approach failing over and over ---
+
+/** One request's failed calls; reset it when the user sends a new request. */
+export type Stuck = { failures: Failure[]; askedAt: number }
+export const newStuck = (): Stuck => ({ failures: [], askedAt: 0 })
+
+/** Records a failed call and, when due, asks Jev whether the attempts repeat: the note for the model, or null. */
+export async function stuckNote(x: Session, st: Stuck, request: string, tool: string, input: unknown, output: unknown): Promise<string | null> {
+  if (!x.c.enabled || !x.c.stuckCheck) return null
+  st.failures.push(failureOf(tool, input, output))
+  if (!stuckDue(st.failures.length, st.askedAt)) return null
+  st.askedAt = st.failures.length
+  const d = await x.decide('tool.result', 'stuck', stuckState(request, st.failures), STUCK_Q)
+  if (!d) return null
+  const note = judgeStuck(d.answers, x.c, st.failures.length)
+  x.record(d, note ? 'flag' : null, note ? 'stuck' : 'not stuck')
+  return note
+}
+
+// --- output trim ---
+
+/** A long shell output cut to the parts the request needs; null to keep it whole. */
+export async function trimOutput(x: Session, request: string, output: string): Promise<string | null> {
+  if (!x.c.enabled) return null
+  const chunks = trimChunks(output, x.c)
+  if (!chunks.length) return null
+  const { state, questions } = trimRequest(request, chunks)
+  const d = await x.decide('tool.result', 'trim', state, questions)
+  if (!d) return null
+  const out = trimmed(chunks, d.answers, x.c)
+  x.record(d, null, out ? `trimmed ${output.length} to ${out.length} characters` : 'kept whole')
+  return out
 }

@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Jev for Claude Code: Bash and Write gates, an injection screen, and a done-check, decided by TypeSafe's Jev.",
   "author": {
     "name": "lordknows13"
@@ -103,6 +103,72 @@
       "title": "Exfil probability to deny",
       "description": "Deny when Jev rates the call as sending local data out at least this probable (0-1)",
       "default": 0.7
+    },
+    "autoApprove": {
+      "type": "boolean",
+      "title": "Auto-approve safe calls",
+      "description": "Where Claude Code would stop to ask you, run a command or in-repo edit Jev is sure is safe instead",
+      "default": true
+    },
+    "approveConfidence": {
+      "type": "number",
+      "title": "Auto-approve: Jev's confidence",
+      "description": "How sure Jev must be that a command only reads or is reversible (0-1)",
+      "default": 0.9
+    },
+    "approveRiskMax": {
+      "type": "number",
+      "title": "Auto-approve: highest risk",
+      "description": "Destructive, data-leaving or credential probability under which a call is approved (0-1)",
+      "default": 0.2
+    },
+    "stuckCheck": {
+      "type": "boolean",
+      "title": "Stuck check",
+      "description": "After repeated failed calls, ask Jev whether the agent is stuck on one approach and tell it to change course",
+      "default": true
+    },
+    "stuck": {
+      "type": "number",
+      "title": "Stuck check threshold",
+      "description": "How sure Jev must be that the failures repeat one approach before the note (0-1)",
+      "default": 0.7
+    },
+    "trimOutput": {
+      "type": "boolean",
+      "title": "Trim long output",
+      "description": "Cut a long shell output to the parts your request needs, Jev rating each part",
+      "default": true
+    },
+    "trimOver": {
+      "type": "number",
+      "title": "Trim outputs longer than",
+      "description": "Characters of shell output before trimming is considered",
+      "default": 12000
+    },
+    "trimKeep": {
+      "type": "number",
+      "title": "Trim: keep a part at",
+      "description": "How likely Jev must rate a part as needed for it to stay (0-1)",
+      "default": 0.3
+    },
+    "skillPick": {
+      "type": "boolean",
+      "title": "Skill picker",
+      "description": "Leave the skill listing out of every prompt; Jev names the one skill a request needs (needs a Jev key)",
+      "default": true
+    },
+    "skillGate": {
+      "type": "number",
+      "title": "Skill picker: needs a skill at",
+      "description": "How strongly Jev must rate a request as needing a skill before one is named (0-1)",
+      "default": 0.3
+    },
+    "skillMin": {
+      "type": "number",
+      "title": "Skill picker: pick confidence",
+      "description": "How sure Jev must be of which skill fits (0-1)",
+      "default": 0.4
     },
     "requested": {
       "type": "number",

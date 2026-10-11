@@ -59,6 +59,18 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "^(Bash|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/codex/ohmyjev.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

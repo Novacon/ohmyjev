@@ -7,15 +7,17 @@
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import {
-  BASH_Q, EXFIL_Q, SCREEN_Q, STOP_Q, WRITE_Q, applyPatchPaths, callSummary, clip, denyText, gateBash, gateExfil, gateWrite,
+  BASH_Q, EXFIL_Q, SCREEN_Q, STOP_Q, WRITE_Q, applyPatchPaths, approveBash, approveWrite, callSummary, clip, clipTail, denyText, gateBash, gateExfil, gateWrite,
   judgeStop, pathDenyText, plainRead, readConfig, sanitizeSid, screen, withPolicies, withPolicyQ, type Config,
 } from '../hooks/policy.ts'
-import { Session, keyOf, pathAllowed, repoRoot, type Env, type Fetch } from './shared.ts'
+import { Session, keyOf, newStuck, pathAllowed, repoRoot, stuckNote, trimOutput, type Env, type Fetch, type Stuck } from './shared.ts'
 
 const CLIP = 16000
-type Tool = { tool: string; input: string; outcome: 'ok' | 'failed' }
-type State = { request: string; previous: string[]; count: number; blockedBefore: string; lastBlocked: string; tools: Tool[]; pushedBackAt: number }
-const EMPTY: State = { request: '', previous: [], count: 0, blockedBefore: '', lastBlocked: '', tools: [], pushedBackAt: -1 }
+type Tool = { tool: string; input: string; outcome: 'ok' | 'failed'; output: string }
+type State = { request: string; previous: string[]; count: number; blockedBefore: string; lastBlocked: string; tools: Tool[]; pushedBackAt: number; approved: string[]; stuck: Stuck }
+const EMPTY: State = { request: '', previous: [], count: 0, blockedBefore: '', lastBlocked: '', tools: [], pushedBackAt: -1, approved: [], stuck: { failures: [], askedAt: 0 } }
+/** A call Jev cleared, as PermissionRequest will see it again. */
+const approvalKey = (tool: string, input: Input): string => `${tool}\u0000${str(input, 'command')}`
 type Input = Record<string, unknown>
 const str = (o: Input, k: string): string => (typeof o[k] === 'string' ? (o[k] as string) : '')
 const obj = (v: unknown): Input => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Input) : {})
@@ -63,7 +65,7 @@ export async function handle(input: Input, env: Env, fetchImpl?: Fetch): Promise
     const prompt = str(input, 'prompt')
     if (!prompt.trim() || /^\/\S+\s*$/.test(prompt.trim())) return undefined
     if (st.request) st.previous = [...st.previous, clip(st.request, 200)].slice(-5)
-    Object.assign(st, { request: prompt, count: st.count + 1, blockedBefore: st.lastBlocked, lastBlocked: '', tools: [] })
+    Object.assign(st, { request: prompt, count: st.count + 1, blockedBefore: st.lastBlocked, lastBlocked: '', tools: [], stuck: newStuck() })
     await save(env, sid, st)
     return undefined
   }
@@ -73,7 +75,14 @@ export async function handle(input: Input, env: Env, fetchImpl?: Fetch): Promise
   const toolInput = obj(input.tool_input)
 
   if (event === 'PreToolUse') {
-    const blocked = async (j: { verdict: unknown; reason: string }) => {
+    const approve = async () => {
+      if (!c.autoApprove) return undefined
+      st.approved = [...st.approved, approvalKey(tool, toolInput)].slice(-20)
+      await save(env, sid, st)
+      return undefined
+    }
+    const blocked = async (j: { verdict: unknown; reason: string }, safe = false) => {
+      if (j.verdict === null && safe) return approve()
       if (j.verdict !== 'deny') return undefined
       st.lastBlocked = callSummary(tool, toolInput)
       await save(env, sid, st)
@@ -81,13 +90,13 @@ export async function handle(input: Input, env: Env, fetchImpl?: Fetch): Promise
     }
     if (tool === 'Bash' && c.bashGate) {
       const command = str(toolInput, 'command')
-      if (plainRead(command, c)) return undefined
+      if (plainRead(command, c)) return approve()
       const state = withPolicies({ command: clip(command, CLIP), cwd, ...(command.length > CLIP ? { truncated: true } : {}) }, c, st.request, st.blockedBefore)
       const d = await x.decide('tool.call', tool, state, withPolicyQ(BASH_Q, c, st.request))
       if (!d) return undefined
       const j = gateBash(d.answers, c)
       x.record(d, j.verdict, j.reason)
-      return blocked(j)
+      return blocked(j, approveBash(d.answers, c))
     }
     if (tool === 'apply_patch' && c.writeGate) {
       const patch = str(toolInput, 'command')
@@ -102,7 +111,7 @@ export async function handle(input: Input, env: Env, fetchImpl?: Fetch): Promise
       if (!d) return undefined
       const j = gateWrite(d.answers, c)
       x.record(d, j.verdict, j.reason)
-      return blocked(j)
+      return blocked(j, approveWrite(d.answers, c))
     }
     if (tool.startsWith('mcp__') && c.exfilGate) {
       const state = withPolicies({ tool, input: clip(JSON.stringify(toolInput), 4000) }, c, st.request, st.blockedBefore)
@@ -115,19 +124,35 @@ export async function handle(input: Input, env: Env, fetchImpl?: Fetch): Promise
     return undefined
   }
 
+  if (event === 'PermissionRequest') {
+    const key = approvalKey(tool, toolInput)
+    if (!c.autoApprove || !st.approved.includes(key)) return undefined
+    st.approved = st.approved.filter(k => k !== key)
+    await save(env, sid, st)
+    return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } }
+  }
+
   if (event === 'PostToolUse') {
     const response = input.tool_response
     const code = obj(response).exit_code ?? obj(response).exitCode
-    st.tools = [...st.tools, { tool, input: clip(JSON.stringify(toolInput), 200), outcome: typeof code === 'number' && code !== 0 ? 'failed' : 'ok' } as Tool].slice(-20)
+    const r = obj(response)
+    const shown = typeof response === 'string' ? response : typeof r.output === 'string' ? r.output : typeof r.stdout === 'string' ? r.stdout : JSON.stringify(response ?? '')
+    st.tools = [...st.tools, { tool, input: clip(JSON.stringify(toolInput), 200), outcome: typeof code === 'number' && code !== 0 ? 'failed' : 'ok', output: clipTail(shown, 300) } as Tool].slice(-20)
+    const failed = typeof code === 'number' && code !== 0
+    const stuck = failed ? await stuckNote(x, st.stuck, st.request, tool, toolInput, shown) : null
     await save(env, sid, st)
-    if (!c.injectionScreen || !(tool === 'Bash' || tool.startsWith('mcp__'))) return undefined
-    const text = typeof response === 'string' ? response : JSON.stringify(response ?? '')
-    if (!text.trim()) return undefined
-    const d = await x.decide('tool.result', tool, { tool, content: clip(text, 6000) }, SCREEN_Q)
-    if (!d) return undefined
+    const notes = stuck ? [stuck] : []
+    // a cut output replaces the result: Codex hooks can't edit it, but a PostToolUse block's reason stands in for it
+    const cut = tool === 'Bash' ? await trimOutput(x, st.request, shown) : null
+    if (cut) return { decision: 'block', reason: [cut, ...notes].join('\n') }
+    const context = () => (notes.length ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: notes.join('\n') } } : undefined)
+    if (!c.injectionScreen || !(tool === 'Bash' || tool.startsWith('mcp__')) || !shown.trim()) return context()
+    const d = await x.decide('tool.result', tool, { tool, content: clip(shown, 6000) }, SCREEN_Q)
+    if (!d) return context()
     const s = screen(d.answers, c)
     x.record(d, s.flagged ? 'flag' : null, s.reason)
-    return s.flagged ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: s.note } } : undefined
+    if (s.flagged) notes.push(s.note)
+    return context()
   }
 
   if (event === 'Stop') {

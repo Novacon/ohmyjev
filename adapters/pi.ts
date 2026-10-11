@@ -1,13 +1,13 @@
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
-  TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead, configCommand,
+  TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, clipTail, plainRead, configCommand,
   BROWSE_DESCRIPTION, BROWSE_SCHEMA, OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
   keepInstructions, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
 import {
-  ASK_DESCRIPTION, ASK_SCHEMA, Session, answerAsk, runBrowse, keyOf, pathAllowed, repoRoot,
+  ASK_DESCRIPTION, ASK_SCHEMA, Session, answerAsk, newStuck, runBrowse, stuckNote, trimOutput, keyOf, pathAllowed, repoRoot,
   type Env, type Fetch,
 } from './shared.ts'
 
@@ -173,20 +173,23 @@ function messagesForStop(messages: HostMessage[]) {
     }
   }
 
-  const tools: Array<{ id: string; tool: string; input: string; outcome: 'ok' | 'failed' | 'pending' }> = []
+  const tools: Array<{ id: string; tool: string; input: string; outcome: 'ok' | 'failed' | 'pending'; output: string }> = []
   const byId = new Map<string, (typeof tools)[number]>()
   for (const message of messages.slice(lastRequest + 1)) {
     if (message.role === 'assistant' && Array.isArray(message.content)) {
       for (const part of message.content) {
         const block = entry(part)
         if (block.type !== 'toolCall' || typeof block.id !== 'string' || typeof block.name !== 'string') continue
-        const call = { id: block.id, tool: block.name, input: clip(json(block.arguments), 200), outcome: 'pending' as const }
+        const call = { id: block.id, tool: block.name, input: clip(json(block.arguments), 200), outcome: 'pending' as 'ok' | 'failed' | 'pending', output: '' }
         tools.push(call)
         byId.set(call.id, call)
       }
     } else if (message.role === 'toolResult' && typeof message.toolCallId === 'string') {
       const call = byId.get(message.toolCallId)
-      if (call) call.outcome = message.isError ? 'failed' : 'ok'
+      if (call) {
+        call.outcome = message.isError ? 'failed' : 'ok'
+        call.output = clipTail(textOf(message.content), 300)
+      }
     }
   }
 
@@ -196,7 +199,7 @@ function messagesForStop(messages: HostMessage[]) {
     state: {
       current_request: clip(textOf(requests.at(-1)?.content), 600),
       previous_requests: requests.slice(-6, -1).map(message => clip(textOf(message.content), 200)),
-      tools_this_turn: tools.slice(-20).map(({ tool, input, outcome }) => ({ tool, input, outcome })),
+      tools_this_turn: tools.slice(-20).map(({ tool, input, outcome, output }) => ({ tool, input, outcome, output })),
       last_assistant_message: clip(textOf(lastAssistant?.content), 1500),
     },
   }
@@ -259,6 +262,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
     let liveRequest = ''
     let lastBlocked = '' // the call a gate denied this turn
     let blockedBefore = '' // what was denied in the turn before this request: a "yes" confirms it
+    let stuck = newStuck()
     let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
     let compactPending = false
     let userThinking: ThinkingLevel = 'medium'
@@ -439,6 +443,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
     pi.on('before_agent_start', guarded<BeforeAgentStartEvent, void>(async (event, ctx) => {
       latestCtx = ctx
       if (event.prompt.trim() && !/^\/\S+\s*$/.test(event.prompt.trim())) {
+        stuck = newStuck()
         userRequest = event.prompt
         blockedBefore = lastBlocked
         lastBlocked = ''
@@ -519,27 +524,38 @@ export function createExtension(options: PiAdapterOptions = {}) {
       }
     }))
 
-    pi.on('tool_result', guarded<ToolResultEvent, { content: Content[]; structuredContent?: unknown }>(async (event, ctx) => {
+    pi.on('tool_result', guarded<ToolResultEvent, { content: Content[]; structuredContent?: unknown }>(async (evt, ctx) => {
+      let event = evt
       latestCtx = ctx
       if (!c.enabled) return
       const tool = event.toolName
       const shell = tool === 'bash' || tool === 'powershell'
-      if (!c.injectionScreen || (event.isError && !shell)) return
-      const candidate = shell || tool.startsWith('mcp__') || tool === 'read'
-      if (!candidate) return
-      if (tool === 'read') {
-        if (!c.screenReads || await pathAllowed(arg(event.input, 'path'), ctx.cwd, root, c, env)) return
+      let text = event.content.filter((part): part is TextContent => part.type === 'text').map(part => part.text).join('\n')
+      const cut = shell ? await trimOutput(await ensureSession(ctx), userRequest, text) : null
+      if (cut) {
+        text = cut
+        event = { ...event, content: [...event.content.filter(part => part.type !== 'text'), { type: 'text', text: cut }] }
       }
-      const content = event.content.filter((part): part is TextContent => part.type === 'text').map(part => part.text).join('\n')
-      if (!content.trim()) return
+      const stuckText = event.isError ? await stuckNote(await ensureSession(ctx), stuck, userRequest, tool, event.input, text) : null
+      const withStuck = stuckText
+        ? { content: [...event.content, { type: 'text' as const, text: stuckText }], ...(Object.hasOwn(event, 'structuredContent') ? { structuredContent: event.structuredContent } : {}) }
+        : undefined
+      const changed = withStuck ?? (cut ? { content: event.content, ...(Object.hasOwn(event, 'structuredContent') ? { structuredContent: event.structuredContent } : {}) } : undefined)
+      if (!c.injectionScreen || (event.isError && !shell)) return changed
+      const candidate = shell || tool.startsWith('mcp__') || tool === 'read'
+      if (!candidate) return changed
+      if (tool === 'read') {
+        if (!c.screenReads || await pathAllowed(arg(event.input, 'path'), ctx.cwd, root, c, env)) return changed
+      }
+      if (!text.trim()) return changed
       const x = await ensureSession(ctx)
-      const d = await x.decide('tool.result', tool, { tool, content: clip(content, 6000) }, SCREEN_Q)
-      if (!d) return
+      const d = await x.decide('tool.result', tool, { tool, content: clip(text, 6000) }, SCREEN_Q)
+      if (!d) return changed
       const judged = screen(d.answers, c)
       x.record(d, judged.flagged ? 'flag' : null, judged.reason)
-      if (!judged.flagged) return
+      if (!judged.flagged) return changed
       return {
-        content: [...event.content, { type: 'text', text: judged.note }],
+        content: [...(changed?.content ?? event.content), { type: 'text', text: judged.note }],
         ...(Object.hasOwn(event, 'structuredContent') ? { structuredContent: event.structuredContent } : {}),
       }
     }))

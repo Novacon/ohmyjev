@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ohmyjev</title>
-<meta name="description" content="Guardrails for Claude Code, decided by Jev. One mod that stops irreversible and data-leaking commands, even in bypass mode, and runs them when you say yes. It also flags prompt injection, pushes back on an unverified done and routes effort per turn.">
+<title>ohmyjev · Jev, batteries included</title>
+<meta name="description" content="Jev, batteries included, for Claude Code, Codex, pi and omp. One install that makes your coding agent faster and safer: no prompts for safe commands, long output cut to what matters, the right skill loaded, and nothing irreversible until you say yes.">
 <meta name="theme-color" content="#0a0a0a">
 <script>document.documentElement.classList.add('js')</script>
 <style>
@@ -232,6 +232,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 .kind.gate::before { background: var(--brand); }
 .kind.check::before { background: var(--lavender); }
 .kind.route::before { background: var(--info); }
+.kind.fast::before { background: var(--brand); }
 .feat h3 { font: 600 1.1875rem/1.2 var(--display); letter-spacing: -.01em; text-transform: none; }
 .feat p { font-size: .9375rem; }
 .feat .cfg { margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--line); color: var(--faint); font: .8125rem var(--mono); }
@@ -420,9 +421,9 @@ td.on { color: var(--ok); }
 <main>
   <section id="top" class="slide landing" data-title="Quick start" aria-label="ohmyjev quick start">
     <div class="quick">
-      <h1>Guardrails for Claude Code, Codex, pi and omp, decided by <a href="https://typesafe.ai">Jev</a>.</h1>
-      <p class="tagline">One mod that stops irreversible and data-leaking commands, even in bypass mode, and runs them when you say yes. It also flags prompt injection, pushes back on an unverified "done" and routes effort per turn.</p>
-      <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>Codex · pi · omp</span><span>Decided by Jev</span><span>MIT license</span></p>
+      <h1><a href="https://typesafe.ai">Jev</a>, batteries included, for Claude Code, Codex, pi and omp.</h1>
+      <p class="tagline">One install that makes your coding agent faster and safer: no permission prompts for safe commands, long output cut to what matters, the right skill loaded, and nothing irreversible until you say yes.</p>
+      <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>Codex · pi · omp</span><span>Decided by Jev, ~200 ms</span><span>MIT license</span></p>
       <div class="qs">
         <div class="qs-head lbl"><span>Quick start</span><span class="qs-tabs" role="tablist" aria-label="Agent"><button type="button" class="qs-tab" role="tab" data-agent="claude" aria-selected="true">Claude Code</button><button type="button" class="qs-tab" role="tab" data-agent="codex" aria-selected="false">Codex</button><button type="button" class="qs-tab" role="tab" data-agent="omp" aria-selected="false">omp</button><button type="button" class="qs-tab" role="tab" data-agent="pi" aria-selected="false">pi</button></span></div>
         <div class="qs-rows" data-agent="claude">
@@ -465,7 +466,8 @@ td.on { color: var(--ok); }
             <div class="term-status" id="term-status"></div>
           </div>
           <div class="scenes" role="tablist" aria-label="Moments">
-            <button type="button" class="scene" role="tab" aria-selected="true"><span class="st">Destructive command</span><span class="sd">A wipe that can't be undone is denied, with the reason.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="true"><span class="st">No prompts, less noise</span><span class="sd">Safe commands run without asking; a long test log comes back as the part that matters.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Destructive command</span><span class="sd">A wipe that can't be undone is denied, with the reason.</span></button>
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">You say yes</span><span class="sd">Blocked, the agent asks. Answer yes and that exact command runs.</span></button>
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Prompt injection</span><span class="sd">A fetched page that gives orders gets a "treat as data" note.</span></button>
             <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Unverified done</span><span class="sd">"Fixed" with no check run? The stop is pushed back once.</span></button>
@@ -480,21 +482,25 @@ td.on { color: var(--ok); }
   <section id="features" class="slide doc" data-title="What you get">
     <div class="doc-inner">
       <div class="head reveal">
-        <p class="section-label lbl">02 / What you get <span>11 features</span></p><h2>what you <em>get</em></h2>
-        <p class="lede">Jev is TypeSafe's decision model. It answers typed questions with probabilities in about 300 ms for a fraction of a cent, cheap enough to ask about every command your agent runs. ohmyjev does, as in-process hooks with no server.</p>
+        <p class="section-label lbl">02 / What you get <span>15 features</span></p><h2>what you <em>get</em></h2>
+        <p class="lede">Jev is TypeSafe's decision model: typed questions in, probabilities out, in about 200 ms for a fraction of a cent. That's cheap enough to ask about every step your agent takes, so ohmyjev asks it what to approve, what to trim, which skill to load, when the agent is stuck, and what to stop. In-process hooks, no server.</p>
       </div>
       <div class="body reveal">
         <div class="grid g5">
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind gate">Gate</span></div><h3>Bash gate</h3><p>Denies a command Jev rates irreversible at 0.6+, or one that sends your files or keys out. Reversible work passes: deleting lines, dropping a co-author, uninstalling. Plain reads like <code>ls</code> and <code>git status</code> skip Jev.</p><p class="cfg">bashGate</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg><span class="kind gate">Gate</span></div><h3>Write gate</h3><p>Denies writes outside the repo and <code>allowPaths</code>, or with a real credential in them. Every worktree of the repo counts, and so does another repo the agent moves into. The path check is plain code and follows symlinks like the OS.</p><p class="cfg">writeGate</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg><span class="kind gate">Gate</span></div><h3>Exfil gate</h3><p>Denies a WebFetch or MCP call Jev rates 0.7+ for sending your data, files or credentials out.</p><p class="cfg">exfilGate</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM9 10h7M9 14h7M9 18h4"/></svg><span class="kind gate">Gate</span></div><h3>Policies</h3><p>Every gate also checks the call against your own plain-English rules.</p><p class="cfg">policies</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"/></svg><span class="kind check">Check</span></div><h3>Injection screen</h3><p>Output from Bash, WebFetch, MCP or an outside Read that talks to the model gets a "treat as data" note.</p><p class="cfg">injectionScreen</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind check">Check</span></div><h3>Done-check</h3><p>Says it's done with no sign of a check? It blocks the stop once and tells the agent to verify. A turn with no tools is never blocked.</p><p class="cfg">doneCheck</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind route">Route</span></div><h3>Router</h3><p>Sets effort and the subagent model from one Jev call per request. No key? Claude Code's own classifier steps in, routing up only.</p><p class="cfg">routeEffort, routeSubagents</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind route">Route</span></div><h3>Auto-compact</h3><p>Task changed and context at least 40% full? It compacts, keeping the new request in full.</p><p class="cfg">autoCompact</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6"/></svg><span class="kind fast">Faster</span></div><h3>Auto-approve</h3><p>Where Claude Code or Codex would ask you, a command Jev is sure is safe just runs. <code>ls</code> and <code>git status</code> skip Jev entirely.</p><p class="cfg">autoApprove</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 10h10M4 14h16M4 18h7"/></svg><span class="kind fast">Faster</span></div><h3>Trim long output</h3><p>A 20,000-character test log came back as 4,600 with the one failure kept. Jev rates which parts your request needs.</p><p class="cfg">trimOutput</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.5 6H21l-5 4 2 7-6-4-6 4 2-7-5-4h6.5z"/></svg><span class="kind fast">Faster</span></div><h3>Skill picker</h3><p>The skill list stays out of every prompt. Jev names the one skill a prompt needs, and none when nothing fits.</p><p class="cfg">skillPick · Claude Code</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg><span class="kind fast">Faster</span></div><h3>Stuck check</h3><p>Three failures that repeat one approach? The agent is told to stop, read the error and try something else.</p><p class="cfg">stuckCheck</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM3 9h18M7 7h.01M13 13l2 5 1-2 2-1z"/></svg><span class="kind fast">Faster</span></div><h3>browse</h3><p>Does a web task in a headless browser, Jev picking each click and field. A Google Flights search took 5.5 s.</p><p class="cfg">browse · off by default</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind fast">Faster</span></div><h3>Router</h3><p>Sets effort and the subagent model from one Jev call per request. No key? Claude Code's own classifier steps in, routing up only.</p><p class="cfg">routeEffort, routeSubagents</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind fast">Faster</span></div><h3>Auto-compact</h3><p>Task changed and context at least 40% full? It compacts, keeping the new request in full.</p><p class="cfg">autoCompact</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind gate">Safer</span></div><h3>Bash gate</h3><p>Denies a command Jev rates irreversible at 0.6+, or one that sends your files or keys out. Reversible work passes: deleting lines, dropping a co-author, uninstalling. Answer yes after a block and it runs.</p><p class="cfg">bashGate</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg><span class="kind gate">Safer</span></div><h3>Write gate</h3><p>Denies writes outside the repo and <code>allowPaths</code>, or with a real credential in them. Every worktree of the repo counts, and so does another repo the agent moves into. The path check is plain code and follows symlinks like the OS.</p><p class="cfg">writeGate</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg><span class="kind gate">Safer</span></div><h3>Exfil gate</h3><p>Denies a WebFetch or MCP call Jev rates 0.7+ for sending your data, files or credentials out. Every gate also checks your own plain-English <code>policies</code>.</p><p class="cfg">exfilGate</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"/></svg><span class="kind gate">Safer</span></div><h3>Injection screen</h3><p>Output from Bash, WebFetch, MCP or an outside Read that talks to the model gets a "treat as data" note.</p><p class="cfg">injectionScreen</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind gate">Safer</span></div><h3>Done-check</h3><p>Says it's done with no sign of a check? It blocks the stop once and tells the agent to verify. It reads each command's result, so a passing test run counts.</p><p class="cfg">doneCheck</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about repo files or text without loading them into its own context.</p><p class="cfg">askJev</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM3 9h18M7 7h.01M13 13l2 5 1-2 2-1z"/></svg><span class="kind">Tool</span></div><h3>browse</h3><p>Does a web task in a headless browser, Jev picking each click and field. A Google Flights search took 5.5 s.</p><p class="cfg">browse · off by default</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind ">Tool</span></div><h3>/omj config</h3><p>See every setting and change one for the session, without a reload.</p><p class="cfg">slash command</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/omj</h3><p>This session's calls, errors, cost, median latency, denies and key source, never the key. <code>/omj config</code> shows and changes settings. <code>/omj stats</code> opens a dashboard of every session. <code>/omj off</code> and <code>on</code> switch it for the session. <code>/ohmyjev</code> is the same command.</p><p class="cfg">slash command · enabled</p></div>
         </div>
       </div>
@@ -647,6 +653,10 @@ key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</pre></div>
               <tr><td><code>routeMainModel</code></td><td>off</td><td>Also switches the main model; that drops the prompt cache.</td></tr>
               <tr><td><code>autoCompact</code></td><td class="on">on</td><td>Compacts after a task switch, past <code>compactMinPercent</code> (40).</td></tr>
               <tr><td><code>askJev</code></td><td class="on">on</td><td>Gives the model the <code>ask_jev</code> tool.</td></tr>
+              <tr><td><code>autoApprove</code></td><td class="on">on</td><td>Skips the permission prompt for a call Jev is sure is safe; off while <code>policies</code> are set.</td></tr>
+              <tr><td><code>trimOutput</code></td><td class="on">on</td><td>Cuts shell output over <code>trimOver</code> (12000 characters) to what the request needs.</td></tr>
+              <tr><td><code>skillPick</code></td><td class="on">on</td><td>Claude Code: leaves the skill list out and names the one skill a prompt needs.</td></tr>
+              <tr><td><code>stuckCheck</code></td><td class="on">on</td><td>Tells the agent to change course when its failures repeat.</td></tr>
               <tr><td><code>browse</code></td><td>off</td><td>Gives the model the <code>browse</code> tool: a web task in a headless browser, Jev picking each step. Needs uv.</td></tr>
               <tr><td><code>policies</code></td><td>empty</td><td>Your own rules, separated by <code>;</code>.</td></tr>
               <tr><td><code>allowPaths</code></td><td>~/.claude;$TMPDIR;/tmp</td><td>Writable places outside the repo. Entries with <code>..</code> are ignored. Not needed for a sibling worktree or a repo the agent moves into: those count as the repo.</td></tr>
@@ -733,6 +743,18 @@ document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click'
 // demo: replays one moment at a time while its slide is on screen. Lines are [kind, html]; 'u' is typed into the prompt.
 const STATUS = (ok, deny, route) => `<span class="g">jev ✓${ok}</span>${deny ? ` <span class="o">⛔${deny}</span>` : ''} <span class="k">${route}</span>`;
 const SCENES = [
+  { status: STATUS(9, 0, 'opus/medium'), lines: [
+    ['u', 'run the tests and fix what fails'],
+    ['t', '<b>Bash</b>(npm test)'],
+    ['r', '<span class="c">[ohmyjev]</span> approved Bash: Jev rated it safe, so no prompt'],
+    ['r', '<span class="c">[ohmyjev]</span> trimmed Bash output from 20471 to 4582 characters'],
+    ['r w', '✗ src/date.test.ts &gt; parses ISO weeks · expected 2026-W53 to equal 2027-W01'],
+    ['t', '<b>Update</b>(src/date.ts)'],
+    ['r', 'Updated src/date.ts with 3 additions and 1 removal'],
+    ['t', '<b>Bash</b>(npm test)'],
+    ['r', '423 pass · 0 fail'],
+    ['a', 'Fixed the ISO week rollover in <b>src/date.ts</b>. All 423 tests pass.'],
+  ] },
   { status: STATUS(12, 1, '↑opus/high'), lines: [
     ['u', 'the build is broken, wipe it and start over'],
     ['t', '<b>Bash</b>(rm -rf ~/app)'],

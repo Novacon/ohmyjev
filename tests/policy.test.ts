@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
   rawAbsolute, sanitizeSid, screen, statusText, type Answers, parseWorktrees, pathDenyText, toggleArg,
-  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, configCommand, browseCommand, browseReply, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
+  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, configCommand, browseCommand, browseReply, stuckDue, judgeStuck, trimChunks, trimRequest, trimmed, pickSkill, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
 const bash = (effect: string, confidence: number, destructive: number): Answers => ({
@@ -210,4 +210,39 @@ test('browseCommand checks its input and keys; browseReply explains failures', (
   expect(JSON.parse(one.env.OMJ_BROWSE_VALUES!)).toEqual(['Zurich', 'London'])
   expect(browseReply('{"status":"done"}')).toBe('{"status":"done"}')
   expect(browseReply('', 'spawn uv ENOENT')).toContain('uv is not installed')
+})
+
+test('stuck check timing and judge', () => {
+  expect([2, 3, 4, 5, 6].map(n => stuckDue(n, 0))).toEqual([false, true, true, true, true])
+  expect(stuckDue(5, 3)).toBe(false)
+  expect(stuckDue(6, 3)).toBe(true)
+  expect(judgeStuck(nouls({ stuck: 0.69 }), c, 3)).toBe(null)
+  expect(judgeStuck(nouls({ stuck: 0.7 }), c, 3)).toContain('last 3 failed attempts')
+})
+
+test('output trim: chunks, one question per middle chunk, and the cut', () => {
+  const line = (i: number) => `test ${i} passed ${'.'.repeat(40)}`
+  const output = Array.from({ length: 400 }, (_, i) => (i === 250 ? 'FAIL test 250: expected 3, got 4' : line(i))).join('\n')
+  const chunks = trimChunks(output, c)
+  expect(chunks.length).toBeGreaterThan(4)
+  expect(chunks.join('\n')).toBe(output)
+  expect(trimChunks('short', c)).toEqual([])
+  const { state, questions } = trimRequest('why does test 250 fail', chunks)
+  expect(Object.keys(questions).length).toBe(chunks.length - 2)
+  const failing = chunks.findIndex(t => t.includes('FAIL'))
+  const a = nouls(Object.fromEntries(Object.keys(questions).map(k => [k, k === `c${failing}` ? 0.95 : 0.02])))
+  const out = trimmed(chunks, a, c)!
+  expect(out).toContain('FAIL test 250')
+  expect(out).toContain(chunks[0]!.split('\n')[0]!)
+  expect(out).toContain('lines left out')
+  expect(out.length).toBeLessThan(output.length / 2)
+  expect(trimmed(chunks, nouls(Object.fromEntries(Object.keys(questions).map(k => [k, 0.9]))), c)).toBe(null)
+  expect(Object.keys(state.chunks).length).toBe(chunks.length - 2)
+})
+
+test('skill picker judge: the gate and the pick', () => {
+  const a = (conf: number, act: number) => ({ which: { type: 'choice' as const, choice: 'commit', confidence: conf }, ...nouls({ acts_on_user_system: act, would_follow_documented_procedure: act, prose_suffices: 1 - act }) })
+  expect(pickSkill(a(0.8, 0.9), c)?.name).toBe('commit')
+  expect(pickSkill(a(0.8, 0.1), c)).toBe(null)
+  expect(pickSkill(a(0.3, 0.9), c)).toBe(null)
 })

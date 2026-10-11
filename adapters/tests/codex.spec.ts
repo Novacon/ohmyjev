@@ -70,3 +70,22 @@ test.skipIf(Bun.version !== pinned)('codex/ohmyjev.mjs is built from the current
   execFileSync('bun', ['build', 'codex/main.ts', '--target=node', '--format=esm', `--outfile=${out}`], { stdio: 'ignore' })
   expect(await readFile('codex/ohmyjev.mjs', 'utf8')).toBe(await readFile(out, 'utf8'))
 })
+
+test('Codex: a command Jev cleared is approved once at PermissionRequest', async () => {
+  answers = { effect: { type: 'choice', choice: 'reversible', confidence: 0.97 }, destructive_intent: n(0.02), exfiltrates: n(0.01), requested: n(0) }
+  const call = { tool_name: 'Bash', tool_input: { command: 'npm test' } }
+  expect(await ev({ hook_event_name: 'PreToolUse', ...call })).toBe(undefined)
+  expect(await ev({ hook_event_name: 'PermissionRequest', ...call })).toMatchObject({ hookSpecificOutput: { decision: { behavior: 'allow' } } })
+  expect(await ev({ hook_event_name: 'PermissionRequest', ...call })).toBe(undefined)
+  expect(await ev({ hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'rm -rf x' } })).toBe(undefined)
+})
+
+test('Codex: three failures that repeat one approach get a change-approach note', async () => {
+  await ev({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the build' })
+  answers = { stuck: n(0.9), injection: n(0) }
+  const fail = (i: number) => ev({ hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: `npm run build ${i}` }, tool_response: { exit_code: 1, output: 'cannot find module x' } })
+  expect(await fail(1)).toBe(undefined)
+  expect(await fail(2)).toBe(undefined)
+  const third = (await fail(3)) as { hookSpecificOutput: { additionalContext: string } }
+  expect(third.hookSpecificOutput.additionalContext).toContain('Stop repeating it')
+})

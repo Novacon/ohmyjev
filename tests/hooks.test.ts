@@ -607,3 +607,84 @@ test('a browse goal that carries local data out is denied before Chrome opens', 
   expect(r.deny).toContain('sends local data out')
   expect(fake.ran.some(a => a[0] === 'uv')).toBe(false)
 })
+
+test('auto-approve: a call Jev cleared skips the permission ask; a risky one and policies keep it', async ($, on) => {
+  let ans = { ...bashAns('reversible', 0.95, 0.05), ...nouls({ exfiltrates: 0.02 }) }
+  harness(on, () => ans)
+  tool(on)
+  on('tool.check', () => ({ decision: 'ask' as const }))
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'npm test' } })).decision).toBe('allow')
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'npm test' } })).decision).toBe('ask') // once per call
+  await $.tool.call({ tool: 'Bash', command: 'git status' }) // a plain read: no Jev call, still approved
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'git status' } })).decision).toBe('allow')
+  ans = { ...bashAns('reversible', 0.7, 0.05), ...nouls({ exfiltrates: 0.02 }) }
+  await $.tool.call({ tool: 'Bash', command: 'npm run migrate' })
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'npm run migrate' } })).decision).toBe('ask')
+})
+
+test('auto-approve stays out of the way with policies set', { options: { policies: 'never touch prod' } }, async ($, on) => {
+  harness(on, () => ({ ...bashAns('read_only', 0.99, 0), ...nouls({ exfiltrates: 0, violates_policy: 0 }) }))
+  tool(on)
+  on('tool.check', () => ({ decision: 'ask' as const }))
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  expect((await $.tool.check({ tool: 'Bash', input: { command: 'npm test' } })).decision).toBe('ask')
+})
+
+test('stuck check: the third failure in a request asks Jev, and a repeat gets a change-approach note', async ($, on) => {
+  const fake = harness(on, q => ('stuck' in q ? nouls({ stuck: 0.9 }) : { ...bashAns('reversible', 0.9, 0), ...nouls({ exfiltrates: 0, injection: 0 }) }))
+  on('tool.call', () => ({ result: 'error: cannot find module x', text: 'error: cannot find module x', isError: true }))
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  await $.turn.start({ text: 'fix the build', turnId: 't1' })
+  const runs = []
+  for (let i = 0; i < 3; i++) runs.push(await $.tool.call({ tool: 'Bash', command: `npm run build -- --try ${i}` }))
+  expect(runs[1]!.context ?? []).not.toContainEqual(expect.stringContaining('Stop repeating'))
+  expect(runs[2]!.context?.at(-1)).toContain('Stop repeating it')
+  expect(fake.requests.filter(r => 'stuck' in r.body.questions).length).toBe(1)
+  expect((fake.requests.find(r => 'stuck' in r.body.questions)!.body.state.failures as unknown[]).length).toBe(3)
+})
+
+test('a long Bash output is cut to the parts the request needs', async ($, on) => {
+  const output = Array.from({ length: 400 }, (_, i) => (i === 250 ? 'FAIL test 250: expected 3, got 4' : `test ${i} passed ${'.'.repeat(40)}`)).join('\n')
+  const fake = harness(on, q => ('c1' in q ? Object.fromEntries(Object.keys(q).map(k => [k, { type: 'noul' as const, noul: 0.02 }])) : { ...bashAns('reversible', 0.9, 0), ...nouls({ exfiltrates: 0, injection: 0 }) }))
+  on('tool.call', () => ({ result: { stdout: output, stderr: '', interrupted: false }, text: output }))
+  const r = await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const stdout = (r.result as { stdout: string }).stdout
+  expect(stdout.length).toBeLessThan(output.length / 2)
+  expect(stdout).toContain('lines left out')
+  expect(fake.requests.some(q => 'c1' in q.body.questions)).toBe(true)
+})
+
+const SKILLS = [
+  { name: 'pptx-author', description: 'Author PowerPoint decks', source: 'user' },
+  { name: 'commit', description: 'Write a commit', source: 'plugin' },
+  { name: 'help', description: 'Help', source: 'builtin' },
+]
+const skillAns = (name: string, conf: number, act: number) => ({
+  which: { type: 'choice' as const, choice: name, confidence: conf },
+  ...nouls({ acts_on_user_system: act, would_follow_documented_procedure: act, prose_suffices: 1 - act }),
+})
+
+test('skill picker: the listing is left out, and the one skill a request needs is named beside it', async ($, on) => {
+  let ans = skillAns('pptx-author', 0.8, 0.9)
+  let fits = 0.8
+  const fake = harness(on, q => ('fits' in q ? nouls({ fits }) : ans))
+  on('command.list', () => ({ value: SKILLS as never }))
+  on('prompt.attachment', ($, e) => ({ text: e.text }))
+  on('prompt.submit', ($, e) => ({ text: e.text, context: e.context }))
+  expect((await $.prompt.attachment({ type: 'skill_listing', text: '- pptx-author: ...', origin: { kind: 'engine' } } as never)).text).toBe(null)
+  const r = await $.prompt.submit({ text: 'make me a 5-slide deck on Q3', wait: false, origin: { kind: 'composer' } } as never)
+  expect(r.context?.at(-1)).toContain('the pptx-author skill')
+  const q = fake.requests.at(-2)!.body.questions as { which: { criteria: Record<string, string> } }
+  expect(Object.keys(q.which.criteria)).toEqual(['pptx-author', 'commit'])
+  fits = 0.1 // the only near option, but it doesn't do the job
+  expect((await $.prompt.submit({ text: 'make me a 5-slide deck on Q3', wait: false, origin: { kind: 'composer' } } as never)).context ?? []).toEqual([])
+  ans = skillAns('commit', 0.9, 0.1) // explain a monad: no skill needed
+  expect((await $.prompt.submit({ text: 'what is a monad', wait: false, origin: { kind: 'composer' } } as never)).context ?? []).toEqual([])
+})
+
+test('skill picker leaves the listing alone with no key', { options: {} }, async ($, on) => {
+  harness(on, () => ({}), { env: { HOME: '/home/u' } })
+  on('prompt.attachment', ($, e) => ({ text: e.text }))
+  expect((await $.prompt.attachment({ type: 'skill_listing', text: 'the listing', origin: { kind: 'engine' } } as never)).text).toBe('the listing')
+})

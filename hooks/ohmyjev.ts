@@ -9,7 +9,7 @@ import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
-  BROWSE_DESCRIPTION, BROWSE_SCHEMA, BROWSE_TIMEOUT_MS, browseCommand, browseReply, callSummary, configCommand, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, toggleArg,
+  BROWSE_DESCRIPTION, BROWSE_SCHEMA, BROWSE_TIMEOUT_MS, browseCommand, browseReply, STUCK_Q, fitsQuestion, pickSkill, skillFits, skillNote, skillQuestions, trimChunks, trimRequest, trimmed, approveBash, approveWrite, failureOf, judgeStuck, stuckDue, stuckState, type Failure, callSummary, clipTail, configCommand, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, toggleArg,
   type Config, type Judged, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -147,7 +147,11 @@ let ctx: Ctx | undefined
 let pushedBackAt = -1 // request count when the done-check last pushed back: once per request
 let route: Route | undefined // this turn's classification; undefined routes nothing
 let lastBlocked = '' // the call a gate denied this turn
+const approved = new Set<string>() // calls Jev cleared as safe: the permission check may skip asking the person
+const approvalKey = (kind: string, input: unknown): string => `${kind}\u0000${arg(input, 'command') || arg(input, 'file_path') || arg(input, 'notebook_path') || arg(input, 'path')}`
 let blockedBefore = '' // what was denied in the turn before this request: a "yes" confirms it
+let failures: Failure[] = [] // this request's failed tool calls, for the stuck check
+let stuckAskedAt = 0 // how many failures there were when the stuck check last asked
 let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
 let liveRequest = '' // the latest request the Stop hook saw: what any compaction must keep
 let compactPending = false // a task switch at a boundary, waiting for the context to fill past compactMinPercent
@@ -259,12 +263,16 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
   const cwd = await $.session.cwd()
   if (kind === 'Bash' && c.bashGate) {
     const command = arg(e, 'command')
-    if (plainRead(command, c)) return undefined // ls, git status, grep: code says read-only, no Jev call
+    if (plainRead(command, c)) {
+      if (c.autoApprove) approved.add(approvalKey(kind, e)) // ls, git status, grep: code says read-only, no Jev call
+      return undefined
+    }
     const state = { command: clip(command, CLIP), cwd, description: clip(arg(e, 'description'), 300), ...(command.length > CLIP ? { truncated: true } : {}) }
     const d = await decide($, 'tool.call', tool, withPolicies(state, c, userRequest, blockedBefore), withPolicyQ(BASH_Q, c, userRequest))
     if (!d) return undefined
     const j = gateBash(d.answers, c)
     record($, d, j.verdict, j.reason)
+    if (j.verdict === null && approveBash(d.answers, c)) approved.add(approvalKey(kind, e))
     return blocked(j, tool, e)
   }
   if (WRITE_TOOLS.includes(kind) && c.writeGate) {
@@ -283,6 +291,7 @@ async function gate($: $, e: { tool: string }): Promise<string | undefined> {
     if (!d) return undefined
     const j = gateWrite(d.answers, c)
     record($, d, j.verdict, j.reason)
+    if (j.verdict === null && approveWrite(d.answers, c)) approved.add(approvalKey(kind, e))
     return blocked(j, tool, e)
   }
   if ((kind === 'WebFetch' || kind.startsWith('mcp__')) && c.exfilGate) {
@@ -315,6 +324,38 @@ async function screenResult($: $, e: { tool: string }, r: ToolCallResult): Promi
   const s = screen(d.answers, c)
   record($, d, s.flagged ? 'flag' : null, s.reason)
   return s.flagged ? { ...r, context: [...(r.context ?? []), s.note] } : r
+}
+
+// --- output trim (after the tool ran): a long Bash output cut to what the request needs ---
+
+async function trimResult($: $, e: { tool: string }, r: ToolCallResult): Promise<ToolCallResult> {
+  const res = r.result as { stdout?: unknown } | undefined
+  if (!c.trimOutput || e.tool !== 'Bash' || typeof res?.stdout !== 'string') return r
+  const chunks = trimChunks(res.stdout, c)
+  if (!chunks.length) return r
+  const { state, questions } = trimRequest(userRequest, chunks)
+  const d = await decide($, 'tool.result', 'trim', state, questions)
+  if (!d) return r
+  const out = trimmed(chunks, d.answers, c)
+  record($, d, null, out ? `trimmed ${res.stdout.length} to ${out.length} characters` : 'kept whole')
+  if (!out) return r
+  say($, `trimmed Bash output from ${res.stdout.length} to ${out.length} characters`)
+  return { ...r, result: { ...res, stdout: out } as never, text: r.text?.includes(res.stdout) ? r.text.replace(res.stdout, out) : out }
+}
+
+// --- stuck check (after the tool ran): the same approach failing over and over ---
+
+async function checkStuck($: $, e: { tool: string }, r: ToolCallResult): Promise<ToolCallResult> {
+  if (!c.stuckCheck || !r.isError) return r
+  const { tool: _t, tool_use_id: _id, ...input } = e as Record<string, unknown>
+  failures.push(failureOf(String(e.tool), input, r.text))
+  if (!stuckDue(failures.length, stuckAskedAt)) return r
+  stuckAskedAt = failures.length
+  const d = await decide($, 'tool.result', 'stuck', stuckState(userRequest, failures), STUCK_Q)
+  if (!d) return r
+  const note = judgeStuck(d.answers, c, failures.length)
+  record($, d, note ? 'flag' : null, note ? 'stuck' : 'not stuck')
+  return note ? { ...r, context: [...(r.context ?? []), note] } : r
 }
 
 // --- ask_jev: a judgment about repo files or text, without reading them into the model's context ---
@@ -460,6 +501,9 @@ export const register: Register = (on, options) => {
   pushedBackAt = -1
   route = undefined
   liveRequest = ''
+  approved.clear()
+  failures = []
+  stuckAskedAt = 0
   userRequest = ''
   lastBlocked = ''
   blockedBefore = ''
@@ -469,6 +513,8 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     if (e.text.trim() && !/^\/\S+\s*$/.test(e.text.trim())) {
       userRequest = e.text
+      failures = []
+      stuckAskedAt = 0
       blockedBefore = lastBlocked
       lastBlocked = ''
     }
@@ -514,6 +560,45 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
+  /** Skill picker: the skill listing stays out of the main conversation while Jev picks (a key is set). */
+  on('prompt.attachment', { type: 'skill_listing' }, async ($, e, next) => {
+    if (e.agentId || !c.enabled || !c.skillPick || !(await keyOf($, c))) return next(e)
+    return { text: null }
+  }).catch(($, e, next) => next(e))
+
+  /** ...and names the one skill this request needs, beside the prompt. */
+  on('prompt.submit', async ($, e, next) => {
+    const own = ['composer', 'bridge', 'sdk'].includes(e.origin.kind)
+    if (!c.enabled || !c.skillPick || !own || /^\/\S/.test(e.text.trim()) || !(await keyOf($, c))) return next(e)
+    const skills = (await $.command.list().catch(() => []))
+      .filter(s => (s.source === 'user' || s.source === 'plugin') && s.name !== 'omj' && s.name !== 'ohmyjev')
+    if (!skills.length) return next(e)
+    const d = await decide($, 'prompt.submit', 'skill', { request: clip(e.text, 1500) }, skillQuestions(skills))
+    if (!d) return next(e)
+    const pick = pickSkill(d.answers, c)
+    record($, d, null, pick ? `skill ${pick.name} (${pick.confidence.toFixed(2)}, needs a skill ${pick.gate.toFixed(2)})` : 'no skill')
+    const skill = pick && skills.find(s => s.name === pick.name)
+    if (!pick || !skill) return next(e)
+    const f = await decide($, 'prompt.submit', 'skill', { request: clip(e.text, 1500) }, fitsQuestion(skill))
+    if (!f) return next(e)
+    const fits = skillFits(f.answers, c)
+    record($, f, null, `${pick.name} fits ${String((f.answers.fits as { noul?: number }).noul ?? 0)}`)
+    if (!fits) return next(e)
+    say($, `skill: ${pick.name} (${pick.confidence.toFixed(2)})`)
+    return next({ ...e, context: [...(e.context ?? []), skillNote(pick.name)] })
+  }).catch(($, e, next) => next(e))
+
+  /** Auto-approve: where the engine would stop to ask the person, a call Jev already cleared runs instead. */
+  on('tool.check', async ($, e, next) => {
+    const r = await next(e)
+    if (r.decision !== 'ask' || r.ceiling === 'ask' || !c.enabled || !c.autoApprove) return r
+    const key = approvalKey(kindOf(e.tool), e.input)
+    if (!approved.has(key)) return r
+    approved.delete(key)
+    say($, `approved ${e.tool}: Jev rated it safe, so no prompt`)
+    return { decision: 'allow', reason: 'ohmyjev: Jev rated this call safe' }
+  }).catch(($, e, next) => next(e))
+
   for (const command of ['omj', 'ohmyjev'])
     on('command.run', { command }, async ($, e) => ({ text: await runCommand($, e.args) })).catch(($, e, next) => next(e))
 
@@ -528,7 +613,7 @@ export const register: Register = (on, options) => {
     if (!c.enabled) return next(e)
     const denied = await gate($, e)
     if (denied) return { deny: denied }
-    return screenResult($, e, await next(e))
+    return checkStuck($, e, await screenResult($, e, await trimResult($, e, await next(e))))
   }).catch(($, e, next) => next(e)) // a bug of ours passes through
 
   // --- done-check: once per request; the user's own Stop hooks run first ---
@@ -546,7 +631,7 @@ export const register: Register = (on, options) => {
       previous_requests: requests.slice(-6, -1).map(m => clip(m.text, 200)),
       tools_this_turn: msgs
         .slice(last + 1)
-        .flatMap(m => m.toolUses.map(t => ({ tool: t.tool, input: clip(JSON.stringify(t.input), 200), outcome: outcomeOf(t) })))
+        .flatMap(m => m.toolUses.map(t => ({ tool: t.tool, input: clip(JSON.stringify(t.input), 200), outcome: outcomeOf(t), output: clipTail(t.text, 300) })))
         .slice(-20),
       last_assistant_message: clip(e.last_assistant_message ?? msgs.filter(m => m.role === 'assistant').at(-1)?.text, 1500),
     }
@@ -587,6 +672,9 @@ export const register: Register = (on, options) => {
     pushedBackAt = -1
     route = undefined
     liveRequest = ''
+    approved.clear()
+    failures = []
+    stuckAskedAt = 0
   userRequest = ''
   lastBlocked = ''
   blockedBefore = ''
