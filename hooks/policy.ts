@@ -26,6 +26,7 @@ export const DEFAULTS = {
   exfil: 0.7,
   requested: 0.8,
   askJev: true,
+  browse: false,
   autoCompact: true,
   compactSwitched: 0.8,
   compactBoundary: 0.6,
@@ -591,4 +592,134 @@ export function summarize(log: string): string {
     `denies: ${[...per].map(([t, n]) => `${t} ${n}`).join(', ') || 'none'}`,
     ...denies.slice(-5).map(r => `  ${r.tool || r.event}: ${r.reason ?? ''}`),
   ].join('\n')
+}
+
+// --- browse: jev-ultrafast (github.com/browser-use/jev-ultrafast, MIT) drives Chrome, Jev picks each step ---
+
+export const JEV_ULTRAFAST = 'git+https://github.com/browser-use/jev-ultrafast@1231850a0bf1a0c0341fe408ef1668dbbfdfac46'
+export const BROWSE_TIMEOUT_MS = 180_000
+export const BROWSE_DESCRIPTION =
+  'Do a task in a real browser tab, fast: Jev picks each click, field and option from the page\'s controls (about one ' +
+  'second per step). Give a starting URL and one narrow goal, like "find one-way flights Zurich to London on Sept 20, ' +
+  'stop when results show" or "open the install section of these docs", with the text to type in `values`. Returns ' +
+  'where it ended, the steps taken and the visible text. Runs in its own headless browser, signed in to nothing. Use WebFetch for a page you only need to read.'
+export const BROWSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    url: { type: 'string', description: 'Where to start, an http(s) URL' },
+    goal: { type: 'string', description: 'One narrow goal, and when to stop' },
+    values: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Exact text the task may type: names, dates, search terms ("Zurich", "London", "Sep 20, 2026"). Jev puts each into the field that needs it',
+    },
+  },
+  required: ['url', 'goal'],
+} as const
+
+/** Runs one jev-ultrafast Agent and prints one JSON line: where it ended, its steps, the visible text; or an error. */
+const BROWSE_PY = `
+import glob, json, os, shutil, subprocess, sys, tempfile, time
+
+def chromium():
+    if os.environ.get("CHROME_PATH"): return os.environ["CHROME_PATH"]
+    for app in ["Google Chrome", "Chromium", "Brave Browser", "Microsoft Edge"]:
+        p = f"/Applications/{app}.app/Contents/MacOS/{app}"
+        if os.path.exists(p): return p
+    for name in ["google-chrome", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"]:
+        if shutil.which(name): return shutil.which(name)
+    home = os.path.expanduser("~")
+    found = sorted(glob.glob(home + "/Library/Caches/ms-playwright/chromium-*/chrome-mac*/*.app/Contents/MacOS/*")
+        + glob.glob(home + "/.cache/ms-playwright/chromium-*/chrome-linux*/chrome")
+        + glob.glob(home + "/.omp/puppeteer/chrome/*/*/*.app/Contents/MacOS/*"))
+    return found[-1] if found else None
+
+def headless():
+    exe = chromium()
+    if not exe: raise RuntimeError("no Chrome, Chromium, Brave or Edge found; install one or set CHROME_PATH")
+    profile = os.path.expanduser("~/.ohmyjev/browser")
+    os.makedirs(profile, exist_ok=True)
+    port_file = os.path.join(profile, "DevToolsActivePort")
+    if os.path.exists(port_file): os.remove(port_file)
+    proc = subprocess.Popen([exe, "--headless=new", "--remote-debugging-port=0", "--user-data-dir=" + profile,
+        "--no-first-run", "--no-default-browser-check", "--window-size=1120,780", "about:blank"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(150):
+        if os.path.exists(port_file) and open(port_file).read().strip(): break
+        time.sleep(0.05)
+    else:
+        proc.kill(); raise RuntimeError("the headless browser did not start: " + exe)
+    os.environ["BU_CDP_URL"] = "http://127.0.0.1:" + open(port_file).read().split()[0]
+    return proc
+
+def pick_value(context):
+    # No text model: Jev picks, from the values the coding agent gave, the one this field needs.
+    from jev_ultrafast.model import post_json
+    values = json.loads(os.environ.get("OMJ_BROWSE_VALUES") or "[]")
+    criteria = {f"v{i}": v for i, v in enumerate(values)}
+    criteria["none"] = "None of these is what this field needs"
+    started = time.time()
+    body = {"model": os.environ.get("TYPESAFE_MODEL", "jev-latest"), "state": context, "questions": {"value": {
+        "type": "choice", "instructions": "Which value should be typed into \`field\` to make progress on \`goal\`?", "criteria": criteria}}}
+    answer = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)["answers"]["value"]["choice"]
+    if answer not in criteria or answer == "none":
+        raise ValueError("no given value fits the field " + json.dumps(context["field"].get("label")) + "; pass the text it needs in values")
+    return criteria[answer], {"model": "jev (picked from values)", "latency_ms": round((time.time() - started) * 1000), "usage": {}}
+
+proc = None
+try:
+    if not (os.environ.get("BU_CDP_URL") or os.environ.get("BU_CDP_WS")): proc = headless()
+    from jev_ultrafast import Agent
+    import jev_ultrafast.agent
+    if not os.environ.get("TEXT_MODEL_API_KEY"): jev_ultrafast.agent.field_text = pick_value
+    with Agent(sys.argv[1], sys.argv[2]) as agent:
+        for _ in agent.run():
+            pass
+        s = agent.snapshot()
+except Exception as e:
+    print(json.dumps({"error": str(e)[:500]})); sys.exit(0)
+finally:
+    if proc: proc.terminate()
+p = s["page"]
+steps = [h["kind"] + " " + h["action"] + (" = " + h["text"] if h["text"] else "") for h in s["history"]]
+print(json.dumps({"status": s["status"], "url": p.get("url"), "title": p.get("title"), "steps": steps, "ms": s["elapsed_ms"], "text": (p.get("text") or "")[:6000]}))
+`
+
+/**
+ * The process that runs a browse call, or the error to hand back. jev-ultrafast speaks only TypeSafe's endpoint, and
+ * types into fields with a small text model: TEXT_MODEL_API_KEY, else OPENROUTER_API_KEY with mercury-2.5.
+ */
+export function browseCommand(
+  input: { url?: unknown; goal?: unknown; values?: unknown },
+  c: Config,
+  env: Readonly<Record<string, string | undefined>>,
+): { argv: string[]; env: Record<string, string> } | string {
+  const url = typeof input.url === 'string' ? input.url.trim() : ''
+  const goal = typeof input.goal === 'string' ? input.goal.trim() : ''
+  if (!/^https?:\/\/\S+$/i.test(url)) return 'url must be an http(s) URL'
+  if (!goal) return 'goal is required'
+  const typesafe = c.apiKey || env.TYPESAFE_API_KEY
+  if (!typesafe) return 'browse needs a TypeSafe key (TYPESAFE_API_KEY or the apiKey setting); OpenRouter does not serve its requests'
+  const text: Record<string, string> = env.TEXT_MODEL_API_KEY
+    ? { TEXT_MODEL_API_KEY: env.TEXT_MODEL_API_KEY }
+    : env.OPENROUTER_API_KEY
+      ? { TEXT_MODEL_API_KEY: env.OPENROUTER_API_KEY, TEXT_MODEL_BASE_URL: 'https://openrouter.ai/api/v1', TEXT_MODEL: 'inception/mercury-2.5', TEXT_MODEL_REASONING: 'none' }
+      : {}
+  return {
+    argv: ['uv', 'run', '--no-project', '--quiet', '--with', JEV_ULTRAFAST, 'python', '-c', BROWSE_PY, url, goal],
+    env: { TYPESAFE_API_KEY: typesafe, ...text, ...(Array.isArray(input.values) ? { OMJ_BROWSE_VALUES: JSON.stringify(input.values.filter(v => typeof v === 'string').slice(0, 20)) } : {}) },
+  }
+}
+
+/** The runner's stdout as the tool's text: its JSON line, or an error that says what to fix. */
+export function browseReply(stdout: string, stderr = ''): string {
+  const line = stdout.trim().split('\n').at(-1) ?? ''
+  try {
+    const out = JSON.parse(line) as { error?: string }
+    if (out.error && /TEXT_MODEL_API_KEY/.test(out.error)) out.error += '. Pass the text to type in values, or set OPENROUTER_API_KEY'
+    return JSON.stringify(out)
+  } catch {
+    const why = /No such file|ENOENT|not found/i.test(stderr) ? 'uv is not installed (https://docs.astral.sh/uv)' : clip(stderr.trim() || 'no output', 500)
+    return JSON.stringify({ error: `browse could not run: ${why}. Chrome needs remote debugging allowed the first time.` })
+  }
 }

@@ -480,7 +480,7 @@ td.on { color: var(--ok); }
   <section id="features" class="slide doc" data-title="What you get">
     <div class="doc-inner">
       <div class="head reveal">
-        <p class="section-label lbl">02 / What you get <span>10 features</span></p><h2>what you <em>get</em></h2>
+        <p class="section-label lbl">02 / What you get <span>11 features</span></p><h2>what you <em>get</em></h2>
         <p class="lede">Jev is TypeSafe's decision model. It answers typed questions with probabilities in about 300 ms for a fraction of a cent, cheap enough to ask about every command your agent runs. ohmyjev does, as in-process hooks with no server.</p>
       </div>
       <div class="body reveal">
@@ -494,6 +494,7 @@ td.on { color: var(--ok); }
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind route">Route</span></div><h3>Router</h3><p>Sets effort and the subagent model from one Jev call per request. No key? Claude Code's own classifier steps in, routing up only.</p><p class="cfg">routeEffort, routeSubagents</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind route">Route</span></div><h3>Auto-compact</h3><p>Task changed and context at least 40% full? It compacts, keeping the new request in full.</p><p class="cfg">autoCompact</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about repo files or text without loading them into its own context.</p><p class="cfg">askJev</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM3 9h18M7 7h.01M13 13l2 5 1-2 2-1z"/></svg><span class="kind">Tool</span></div><h3>browse</h3><p>Does a web task in a headless browser, Jev picking each click and field. A Google Flights search took 5.5 s.</p><p class="cfg">browse · off by default</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/omj</h3><p>This session's calls, errors, cost, median latency, denies and key source, never the key. <code>/omj config</code> shows and changes settings. <code>/omj stats</code> opens a dashboard of every session. <code>/omj off</code> and <code>on</code> switch it for the session. <code>/ohmyjev</code> is the same command.</p><p class="cfg">slash command · enabled</p></div>
         </div>
       </div>
@@ -646,6 +647,7 @@ key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</pre></div>
               <tr><td><code>routeMainModel</code></td><td>off</td><td>Also switches the main model; that drops the prompt cache.</td></tr>
               <tr><td><code>autoCompact</code></td><td class="on">on</td><td>Compacts after a task switch, past <code>compactMinPercent</code> (40).</td></tr>
               <tr><td><code>askJev</code></td><td class="on">on</td><td>Gives the model the <code>ask_jev</code> tool.</td></tr>
+              <tr><td><code>browse</code></td><td>off</td><td>Gives the model the <code>browse</code> tool: a web task in a headless browser, Jev picking each step. Needs uv.</td></tr>
               <tr><td><code>policies</code></td><td>empty</td><td>Your own rules, separated by <code>;</code>.</td></tr>
               <tr><td><code>allowPaths</code></td><td>~/.claude;$TMPDIR;/tmp</td><td>Writable places outside the repo. Entries with <code>..</code> are ignored. Not needed for a sibling worktree or a repo the agent moves into: those count as the repo.</td></tr>
               <tr><td><code>fastModel</code>, <code>balancedModel</code>, <code>deepModel</code></td><td>claude-{haiku,sonnet,opus}-5-5</td><td>The model id for each router tier.</td></tr>

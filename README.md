@@ -77,6 +77,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
+| **`browse`** | A tool that does a web task in a headless browser, with Jev picking each click and field: a Google Flights search in about 6 seconds. Off until you turn on `browse`. |
 | **`/omj`** | This session's Jev calls, errors, cost, median latency and denies, and where the key comes from. It never prints the key. `/omj config` lists and changes settings. `/omj stats` opens a dashboard of every session in your browser. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
 
 ### How a tool call goes through it
@@ -212,7 +213,7 @@ pi has no settings screen for extensions, so put yours under an `ohmyjev` key in
 | Router effort | ✓ | none: hooks can't set it | ✓ (left alone while you're on `auto`) | ✓ |
 | Router subagent model | general-purpose subagents | none | subagents on the default `task` role | none: pi has no subagents |
 | Router without a key | Claude Code's built-in classifier, up only | none | off: omp has no separate classifier call for extensions | the cheapest model you've set up, up only |
-| `/omj`, `ask_jev` | ✓ | none: hooks can't add commands or tools | ✓ | ✓ |
+| `/omj`, `ask_jev`, `browse` | ✓ | none: hooks can't add commands or tools | ✓ | ✓ |
 | Decision lines | in the transcript | the log only | notifications | notifications |
 | Status | under the prompt | none | in the footer | in the footer |
 
@@ -274,6 +275,31 @@ The model can call this tool on its own when it needs a judgment about files wit
 
 Jev reads the files, not the model. ohmyjev only sends files that are inside the repo, up to 8000 characters each and
 80000 in total.
+
+### `browse`
+
+Turn it on with `/omj config browse on`, or `browse` in the settings. The model then has a `browse` tool for tasks on a
+website: give it a starting URL, one narrow goal, and the text it may type.
+
+```json
+{
+  "url": "https://www.google.com/travel/flights?hl=en",
+  "goal": "Find one-way flights from Zurich to London on November 20, 2026. Stop when flight options show.",
+  "values": ["Zurich", "London", "Nov 20, 2026"]
+}
+```
+
+Each step, Jev reads the page's controls and picks one action and its target in a single request, and when a field
+needs text it picks the right entry from `values`. That run took 11 steps and 5.5 seconds: one-way, both cities, the
+date, search. The tool returns where it ended, the steps and the page's visible text, and that text goes through the
+injection screen like any tool output. The exfil gate checks the goal first, so a goal that would carry your files to a
+website is denied before the browser opens.
+
+It is [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast) (MIT), pinned to one commit, run through
+[uv](https://docs.astral.sh/uv), so install uv once. It starts its own headless Chrome, Chromium, Brave or Edge with
+a profile in `~/.ohmyjev/browser`, signed in to nothing, and closes it after the task. Set `CHROME_PATH` to choose the
+browser. With `OPENROUTER_API_KEY` or `TEXT_MODEL_API_KEY` set, a small text model writes field text instead of picking
+from `values`. Use WebFetch for a page the model only needs to read.
 
 ### In the transcript
 
@@ -353,6 +379,7 @@ one for the session. To keep a change, run `/plugin configure ohmyjev@ohmyjev` i
 | `routeWithoutKey` | on | With no key, routes with Claude Code's built-in classifier instead. It has no confidence, so it only routes up. |
 | `autoCompact` | on | Compacts when the task changes. `compactMinPercent` (40) sets how full the context has to be first. |
 | `askJev` | on | Gives the model the `ask_jev` tool. |
+| `browse` | off | Gives the model the `browse` tool. Needs uv and a Chromium-based browser. |
 | `policies` | empty | Your own rules, separated by `;`. |
 | `allowPaths` | `~/.claude;$TMPDIR;/tmp` | Places outside the repo where writes are allowed. ohmyjev ignores any entry with `..` in it. You don't need it for a sibling worktree or another git repo the agent `cd`s into: those count as the repo. |
 | `fastModel`, `balancedModel`, `deepModel` | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | The model id for each router tier. |
@@ -384,6 +411,7 @@ a fixed size:
 | Done-check | The current request (600), up to five earlier requests (200 each), up to 20 of this turn's tool calls with their input (200 each) and outcome, and Claude's last message (1500) |
 | Router | The request (up to 1500 characters) |
 | `ask_jev` | The model's question, any text it passes (up to 20000 characters) and the repo files it names (8000 each, 80000 in total). It never sends files outside the repo |
+| `browse` | The goal and URL to the exfil gate; then, each step, the page's controls and visible text (6000) and the goal to Jev, and the page's text to the injection screen. The websites see the browser like any visitor |
 
 The write and exfil gates also send your latest message (1500), for the request check. When you've set `policies`,
 every gate sends those too. Turning a feature off stops its calls.
@@ -440,4 +468,5 @@ The design and plans are in [`docs/superpowers`](docs/superpowers).
 
 ## Credits
 
-The question rubrics come from [disler/ten-levels-of-jev](https://github.com/disler/ten-levels-of-jev). MIT license.
+The question rubrics come from [disler/ten-levels-of-jev](https://github.com/disler/ten-levels-of-jev). `browse` runs
+[browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast). Both MIT.

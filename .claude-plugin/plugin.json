@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Jev for Claude Code: Bash and Write gates, an injection screen, and a done-check, decided by TypeSafe's Jev.",
   "author": {
     "name": "lordknows13"
@@ -133,6 +133,12 @@
       "title": "ask_jev tool",
       "description": "Give the model an ask_jev tool for quick judgments about repo files or text without reading them into context",
       "default": true
+    },
+    "browse": {
+      "type": "boolean",
+      "title": "browse tool",
+      "description": "Give the model a browse tool: jev-ultrafast does a task in your Chrome, Jev picking each step. Needs uv, Chrome remote debugging, and OPENROUTER_API_KEY to type into fields",
+      "default": false
     },
     "autoCompact": {
       "type": "boolean",

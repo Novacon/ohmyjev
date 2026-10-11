@@ -2,12 +2,12 @@ import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   TIER_LABELS, builtinRoute, clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead, configCommand,
-  OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
+  BROWSE_DESCRIPTION, BROWSE_SCHEMA, OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
   keepInstructions, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
 import {
-  ASK_DESCRIPTION, ASK_SCHEMA, Session, answerAsk, keyOf, pathAllowed, repoRoot,
+  ASK_DESCRIPTION, ASK_SCHEMA, Session, answerAsk, runBrowse, keyOf, pathAllowed, repoRoot,
   type Env, type Fetch,
 } from './shared.ts'
 
@@ -354,6 +354,29 @@ export function createExtension(options: PiAdapterOptions = {}) {
       })
       askRegistered = true
     }
+    let browseRegistered = false
+    const registerBrowse = (): void => {
+      if (browseRegistered || !c.browse) return
+      pi.registerTool({
+        name: 'browse',
+        label: 'Browse',
+        description: BROWSE_DESCRIPTION,
+        parameters: BROWSE_SCHEMA,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+          try {
+            const r = await runBrowse(await ensureSession(ctx), params, userRequest, blockedBefore)
+            if ('deny' in r) {
+              lastBlocked = callSummary('browse', params)
+              return { content: [{ type: 'text', text: r.deny }], details: undefined, isError: true }
+            }
+            return { content: [{ type: 'text', text: r.text }], details: undefined }
+          } catch {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'browse failed' }) }], details: undefined }
+          }
+        },
+      })
+      browseRegistered = true
+    }
 
     /** /omj and /ohmyjev: the report, `settings`, or `on`/`off` for this session (the enabled setting is the default). */
     const command = async (args: string, ctx: PiContext): Promise<void> => {
@@ -389,6 +412,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
       userThinking = pi.getThinkingLevel()
       const x = await ensureSession(ctx)
       registerAsk()
+      registerBrowse()
       const key = keyOf(c, env)
       say(
         ctx,

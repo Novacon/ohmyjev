@@ -9,7 +9,7 @@ import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
-  callSummary, configCommand, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, toggleArg,
+  BROWSE_DESCRIPTION, BROWSE_SCHEMA, BROWSE_TIMEOUT_MS, browseCommand, browseReply, callSummary, configCommand, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, toggleArg,
   type Config, type Judged, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -20,6 +20,7 @@ type Ctx = { p: Paths; s: SessionState }
 const WRITE_TOOLS = ['Write', 'Edit', 'NotebookEdit']
 const HOOKED = ['Bash', 'WebFetch', 'Read', 'Write', 'Edit', 'NotebookEdit', /^mcp__/] as const
 const ASK = 'mcp__ohmyjev__ask_jev'
+const BROWSE = 'mcp__ohmyjev__browse'
 const DOWN_MS = 5 * 60_000
 const CLIP = 16000
 
@@ -361,6 +362,21 @@ async function answerAsk($: $, e: Record<string, unknown>): Promise<ToolCallResu
   return reply(d.answers.answer)
 }
 
+/** browse: jev-ultrafast in the user's Chrome; the answer is the tool's result, screened like any MCP output. */
+async function runBrowse($: $, e: Record<string, unknown>): Promise<ToolCallResult> {
+  const reply = (text: string): ToolCallResult => ({ result: text, text })
+  if (!c.browse) return reply(JSON.stringify({ error: 'browse is off: /omj config browse on' }))
+  const env = {
+    TYPESAFE_API_KEY: await $.env.get('TYPESAFE_API_KEY'),
+    OPENROUTER_API_KEY: await $.env.get('OPENROUTER_API_KEY'),
+    TEXT_MODEL_API_KEY: await $.env.get('TEXT_MODEL_API_KEY'),
+  }
+  const cmd = browseCommand(e, c, env)
+  if (typeof cmd === 'string') return reply(JSON.stringify({ error: cmd }))
+  const r = await $.process.run(cmd.argv, { env: cmd.env, timeoutMs: BROWSE_TIMEOUT_MS }).catch((err: unknown) => ({ stdout: '', stderr: String(err) }))
+  return reply(browseReply(r.stdout, r.stderr))
+}
+
 /** /omj: this session's status and log summary, and where the key comes from (never the key). */
 async function jevReport($: $): Promise<string> {
   const x = await session($)
@@ -481,6 +497,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
+    if (c.browse) await $.tool.register({ name: 'browse', description: BROWSE_DESCRIPTION, inputSchema: BROWSE_SCHEMA }).catch(() => undefined)
     for (const name of ['omj', 'ohmyjev'])
       await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", argumentHint: '[stats|config [name value]|on|off]' }).catch(() => undefined)
     const k = await keyOf($, c)
@@ -502,6 +519,12 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
     if (e.tool === ASK) return answerAsk($, e as Record<string, unknown>)
+    if (e.tool === BROWSE) {
+      const denied = c.enabled && c.browse ? await gate($, e) : undefined // the exfil gate: a goal that carries local data out
+      if (denied) return { deny: denied }
+      const r = await runBrowse($, e as Record<string, unknown>)
+      return c.enabled ? screenResult($, e, r) : r
+    }
     if (!c.enabled) return next(e)
     const denied = await gate($, e)
     if (denied) return { deny: denied }

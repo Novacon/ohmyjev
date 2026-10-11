@@ -5,12 +5,12 @@ import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, DEFAULTS, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   clip, decideRoute, denyText, gateBash, gateExfil, gateWrite, jevRouteLine, judgeStop, pathDenyText, callSummary, plainRead, configCommand, applyPatchPaths,
-  OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
+  BROWSE_DESCRIPTION, OMJ_HELP, OMJ_OFF, OMJ_ON, toggleArg,
   keepInstructions, modelOf, readConfig, routeStep, screen, stepLine, withPolicies, withPolicyQ,
   type Config, type Route,
 } from '../hooks/policy.ts'
 import {
-  ASK_DESCRIPTION, Session, answerAsk, keyOf, pathAllowed, repoRoot,
+  ASK_DESCRIPTION, Session, answerAsk, runBrowse, keyOf, pathAllowed, repoRoot,
   type Env, type Fetch,
 } from './shared.ts'
 
@@ -251,6 +251,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     let compactPending = false
     let classifiedPrompt: string | undefined
     let askRegistered = false
+    let browseRegistered = false
     let sessionGeneration = 0
     let userEffort: string | undefined
     const routedThinkingEntries = new Set<string>()
@@ -422,6 +423,35 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
           },
         })
         askRegistered = true
+      }
+      if (c.browse && !browseRegistered) {
+        const t = pi.typebox.Type
+        pi.registerTool({
+          name: 'browse',
+          label: 'Browse',
+          description: BROWSE_DESCRIPTION,
+          parameters: t.Object({
+            url: t.String({ description: 'Where to start, an http(s) URL' }),
+            goal: t.String({ description: 'One narrow goal, and when to stop' }),
+            values: t.Optional(t.Array(t.String(), { description: 'Exact text the task may type; Jev puts each into the field that needs it' })),
+          }),
+          approval: 'exec',
+          async execute(_id, params, _signal, _update, toolCtx) {
+            try {
+              touch(toolCtx)
+              if (!session) return { content: [{ type: 'text', text: JSON.stringify({ error: 'jev session unavailable' }) }] }
+              const r = await runBrowse(session, params, userRequest, blockedBefore)
+              if ('deny' in r) {
+                lastBlocked = callSummary('browse', params)
+                return { content: [{ type: 'text', text: r.deny }], details: {}, isError: true }
+              }
+              return { content: [{ type: 'text', text: r.text }], details: {} }
+            } catch {
+              return { content: [{ type: 'text', text: JSON.stringify({ error: 'browse failed' }) }], details: {} }
+            }
+          },
+        })
+        browseRegistered = true
       }
     }
 

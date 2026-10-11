@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Guardrails for coding agents, decided by TypeSafe's Jev: blocks destructive commands, catches prompt injection, pushes back on an unverified done and routes effort per turn. For Claude Code, pi and omp.",
   "type": "module",
   "license": "MIT",
@@ -145,6 +145,11 @@
         "type": "boolean",
         "description": "Expose the ask_jev tool for quick judgments about repo files or text",
         "default": true
+      },
+      "browse": {
+        "type": "boolean",
+        "description": "Expose a browse tool: jev-ultrafast does a task in your Chrome, Jev picking each step. Needs uv, Chrome remote debugging, and OPENROUTER_API_KEY to type into fields",
+        "default": false
       },
       "autoCompact": {
         "type": "boolean",

@@ -8,7 +8,7 @@ import { appendFile, chmod, lstat, mkdir, readFile, readdir, realpath, writeFile
 import { dashboardHtml } from '../hooks/dashboard.ts'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from '../hooks/jev.ts'
 import {
-  DASHBOARD, EMPTY_SESSION, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, parseLog, parseWorktrees, rawAbsolute, sanitizeSid,
+  BROWSE_TIMEOUT_MS, DASHBOARD, EMPTY_SESSION, EXFIL_Q, SCREEN_Q, browseCommand, browseReply, denyText, gateExfil, screen, withPolicies, withPolicyQ, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, parseLog, parseWorktrees, rawAbsolute, sanitizeSid,
   splitList, statusText, summarize, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
 } from '../hooks/policy.ts'
 
@@ -287,4 +287,49 @@ export async function answerAsk(x: Session, input: Record<string, unknown>, cwd:
   if (!d) return JSON.stringify({ error: 'jev unavailable: answer from your own reading' })
   x.record(d, null, 'asked')
   return JSON.stringify(d.answers.answer)
+}
+
+// --- browse: jev-ultrafast in the user's Chrome ---
+
+/** Runs a process to completion: its stdout and stderr, whatever the exit. Tests pass a fake. */
+export type Runner = (argv: string[], env: Record<string, string>, timeoutMs: number) => Promise<{ stdout: string; stderr: string }>
+const execRunner: Runner = (argv, env, timeoutMs) => {
+  const { promise, resolve } = Promise.withResolvers<{ stdout: string; stderr: string }>()
+  execFile(argv[0]!, argv.slice(1), { env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 4 << 20 }, (err, stdout, stderr) =>
+    resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') || (err ? String(err) : '') }))
+  return promise
+}
+
+/**
+ * browse for pi and omp: the exfil gate on the call (the user's request can lift it), jev-ultrafast, then the
+ * injection screen on what came back. The text for the model, or a deny.
+ */
+export async function runBrowse(
+  x: Session,
+  input: Record<string, unknown>,
+  request = '',
+  blockedBefore = '',
+  run: Runner = execRunner,
+): Promise<{ text: string } | { deny: string }> {
+  const c = x.c
+  if (!c.browse) return { text: JSON.stringify({ error: 'browse is off: /omj config browse on' }) }
+  if (c.enabled && c.exfilGate) {
+    const state = withPolicies({ tool: 'browse', input: clip(JSON.stringify(input), 4000) }, c, request, blockedBefore)
+    const d = await x.decide('tool.call', 'browse', state, withPolicyQ(EXFIL_Q, c, request))
+    if (d) {
+      const j = gateExfil(d.answers, c)
+      x.record(d, j.verdict, j.reason)
+      if (j.verdict === 'deny') return { deny: denyText(j.reason) }
+    }
+  }
+  const cmd = browseCommand(input, c, x.env)
+  if (typeof cmd === 'string') return { text: JSON.stringify({ error: cmd }) }
+  const r = await run(cmd.argv, cmd.env, BROWSE_TIMEOUT_MS)
+  const text = browseReply(r.stdout, r.stderr)
+  if (!c.enabled || !c.injectionScreen) return { text }
+  const d = await x.decide('tool.result', 'browse', { tool: 'browse', content: clip(text, 6000) }, SCREEN_Q)
+  if (!d) return { text }
+  const s = screen(d.answers, c)
+  x.record(d, s.flagged ? 'flag' : null, s.reason)
+  return { text: s.flagged ? `${text}\n${s.note}` : text }
 }

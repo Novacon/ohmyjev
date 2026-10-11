@@ -23,6 +23,7 @@ var DEFAULTS = {
   exfil: 0.7,
   requested: 0.8,
   askJev: true,
+  browse: false,
   autoCompact: true,
   compactSwitched: 0.8,
   compactBoundary: 0.6,
@@ -379,6 +380,7 @@ function summarize(log) {
   ].join(`
 `);
 }
+var BROWSE_DESCRIPTION = "Do a task in a real browser tab, fast: Jev picks each click, field and option from the page's controls (about one " + 'second per step). Give a starting URL and one narrow goal, like "find one-way flights Zurich to London on Sept 20, ' + 'stop when results show" or "open the install section of these docs", with the text to type in `values`. Returns ' + "where it ended, the steps taken and the visible text. Runs in its own headless browser, signed in to nothing. Use WebFetch for a page you only need to read.";
 
 // adapters/shared.ts
 import { execFile } from "node:child_process";

@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
   rawAbsolute, sanitizeSid, screen, statusText, type Answers, parseWorktrees, pathDenyText, toggleArg,
-  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, configCommand, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
+  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, configCommand, browseCommand, browseReply, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
 const bash = (effect: string, confidence: number, destructive: number): Answers => ({
@@ -194,4 +194,20 @@ test('/omj config lists, changes one setting for the session, and never takes th
   const k = configCommand(c, 'apiKey ts-secret', p)
   expect(k.c.apiKey).toBe(c.apiKey)
   expect(k.text).not.toContain('ts-secret')
+})
+
+test('browseCommand checks its input and keys; browseReply explains failures', () => {
+  const env = { TYPESAFE_API_KEY: 'ts', OPENROUTER_API_KEY: 'or' }
+  expect(browseCommand({ url: 'ftp://x', goal: 'g' }, c, env)).toBe('url must be an http(s) URL')
+  expect(browseCommand({ url: 'https://x.test', goal: ' ' }, c, env)).toBe('goal is required')
+  expect(browseCommand({ url: 'https://x.test', goal: 'g' }, c, { OPENROUTER_API_KEY: 'or' })).toContain('needs a TypeSafe key')
+  const cmd = browseCommand({ url: 'https://x.test', goal: 'g' }, c, env) as { argv: string[]; env: Record<string, string> }
+  expect(cmd.argv.slice(0, 2)).toEqual(['uv', 'run'])
+  expect(cmd.argv.join(' ')).toContain('jev-ultrafast@')
+  expect(cmd.env).toMatchObject({ TYPESAFE_API_KEY: 'ts', TEXT_MODEL_API_KEY: 'or', TEXT_MODEL: 'inception/mercury-2.5' })
+  const one = browseCommand({ url: 'https://x.test', goal: 'g', values: ['Zurich', 3, 'London'] }, c, { TYPESAFE_API_KEY: 'ts' }) as { env: Record<string, string> }
+  expect(one.env.TEXT_MODEL_API_KEY).toBe(undefined) // no text model: Jev picks from values
+  expect(JSON.parse(one.env.OMJ_BROWSE_VALUES!)).toEqual(['Zurich', 'London'])
+  expect(browseReply('{"status":"done"}')).toBe('{"status":"done"}')
+  expect(browseReply('', 'spawn uv ENOENT')).toContain('uv is not installed')
 })
