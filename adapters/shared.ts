@@ -248,24 +248,7 @@ export async function pathAllowed(spelled: string, cwd: string, root: string, c:
 
 // --- ask_jev: a judgment about repo files or text, without reading them into the model's context ---
 
-export const ASK_DESCRIPTION =
-  'Ask Jev, a fast (~300 ms) and nearly free decision model, one question about repo files or text: yes/no (noul), ' +
-  'multiple choice (choice), or a position on levels (score). Use it for a judgment ABOUT content without reading it ' +
-  'into your context: is this file relevant, does this log show the failure, which of these is riskiest. Read the file ' +
-  'yourself when you need to edit or quote it. Values under ~0.7 mean Jev is unsure.'
-/** JSON Schema of ask_jev's input; each adapter wraps it in its host's schema type. */
-export const ASK_SCHEMA = {
-  type: 'object',
-  properties: {
-    question: { type: 'string', description: 'The question, about `files` and/or `state`' },
-    type: { type: 'string', enum: ['noul', 'choice', 'score'], description: 'noul = probability of yes; choice = one of options; score = a position on options as levels, low to high' },
-    options: { type: 'array', items: { type: 'string' }, description: 'choice labels, or 2-10 score levels from low to high' },
-    files: { type: 'array', items: { type: 'string' }, description: 'Repo file paths whose contents Jev reads (not you)' },
-    folder: { type: 'string', description: 'With type noul: ask the question of every source file under this repo folder; returns only the files that answer yes, with the line' },
-    state: { type: 'string', description: 'Any other text Jev should judge' },
-  },
-  required: ['question', 'type'],
-} as const
+export { ASK_DESCRIPTION, ASK_SCHEMA } from '../hooks/policy.ts'
 const ASK_FILE = 8000
 const ASK_TOTAL = 80000
 

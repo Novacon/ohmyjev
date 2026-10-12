@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "description": "Jev for Claude Code: Bash and Write gates, an injection screen, and a done-check, decided by TypeSafe's Jev.",
   "author": {
     "name": "lordknows13"
@@ -13,6 +13,12 @@
     "guardrails"
   ],
   "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "ohmyjev on",
+      "description": "Off lets every call through. /omj off and /omj on change it for one session",
+      "default": true
+    },
     "apiKey": {
       "type": "string",
       "title": "TypeSafe API key",
@@ -26,11 +32,17 @@
       "description": "Model id sent to the TypeSafe endpoint",
       "default": "jev-1.13.0"
     },
-    "enabled": {
+    "maskSecrets": {
       "type": "boolean",
-      "title": "ohmyjev on",
-      "description": "Off lets every call through. /omj off and /omj on change it for one session",
+      "title": "Mask secrets sent to Jev",
+      "description": "Replace keys, tokens, credentials in URLs, emails and your home folder with markers in everything sent to Jev",
       "default": true
+    },
+    "timeoutMs": {
+      "type": "number",
+      "title": "Jev timeout (ms)",
+      "description": "How long a gate, screen or the router waits for Jev before letting the call through",
+      "default": 1500
     },
     "bashGate": {
       "type": "boolean",
@@ -44,29 +56,23 @@
       "description": "Deny writes outside the repo/allowPaths and writes holding credentials",
       "default": true
     },
-    "injectionScreen": {
-      "type": "boolean",
-      "title": "Injection screen",
-      "description": "Warn the model when Bash, WebFetch or MCP output carries instructions aimed at it",
-      "default": true
-    },
-    "doneCheck": {
-      "type": "boolean",
-      "title": "Done-check",
-      "description": "Push back once when the agent claims done without verifying",
-      "default": true
-    },
     "exfilGate": {
       "type": "boolean",
       "title": "Exfil gate",
       "description": "Deny WebFetch and MCP calls that send local data, files or credentials out",
       "default": true
     },
-    "screenReads": {
-      "type": "boolean",
-      "title": "Screen Reads outside the repo",
-      "description": "Run the injection screen on files read from outside the repo",
-      "default": true
+    "policies": {
+      "type": "string",
+      "title": "Policies",
+      "description": "Your own rules every gate weighs, separated by ; (e.g. never touch prod; no deploys on Friday)",
+      "default": ""
+    },
+    "allowPaths": {
+      "type": "string",
+      "title": "Allowed write paths outside the repo",
+      "description": "Separated by ; (~ and $TMPDIR expand)",
+      "default": "~/.claude;$TMPDIR;/tmp"
     },
     "bashIrreversible": {
       "type": "number",
@@ -92,35 +98,47 @@
       "description": "Deny when the file is a secrets file at least this confident (0-1)",
       "default": 0.8
     },
-    "injection": {
-      "type": "number",
-      "title": "Injection probability to flag",
-      "description": "Flag tool output as an injection at this probability (0-1)",
-      "default": 0.7
-    },
     "exfil": {
       "type": "number",
       "title": "Exfil probability to deny",
       "description": "Deny when Jev rates the call as sending local data out at least this probable (0-1)",
       "default": 0.7
     },
-    "autoApprove": {
+    "requested": {
+      "type": "number",
+      "title": "Let through what you asked for",
+      "description": "A gate's Jev deny passes when Jev rates your latest message as asking for exactly that call at least this probable (0-1). Policy and path denies always stand",
+      "default": 0.8
+    },
+    "injectionScreen": {
       "type": "boolean",
-      "title": "Auto-approve safe calls",
-      "description": "Where Claude Code would stop to ask you, run a command or in-repo edit Jev is sure is safe instead",
+      "title": "Injection screen",
+      "description": "Warn the model when Bash, WebFetch or MCP output carries instructions aimed at it",
       "default": true
     },
-    "approveConfidence": {
-      "type": "number",
-      "title": "Auto-approve: Jev's confidence",
-      "description": "How sure Jev must be that a command only reads or is reversible (0-1)",
-      "default": 0.9
+    "screenReads": {
+      "type": "boolean",
+      "title": "Screen Reads outside the repo",
+      "description": "Run the injection screen on files read from outside the repo",
+      "default": true
     },
-    "approveRiskMax": {
-      "type": "number",
-      "title": "Auto-approve: highest risk",
-      "description": "Destructive, data-leaving or credential probability under which a call is approved (0-1)",
-      "default": 0.2
+    "doneCheck": {
+      "type": "boolean",
+      "title": "Done-check",
+      "description": "Push back once when the agent claims done without verifying",
+      "default": true
+    },
+    "subagentCheck": {
+      "type": "boolean",
+      "title": "Subagent checks",
+      "description": "Send a vague subagent brief back once, and check a subagent's done against its own tool record",
+      "default": true
+    },
+    "proseCheck": {
+      "type": "boolean",
+      "title": "Writing-rule check",
+      "description": "Check the final reply against the writing rules in CLAUDE.md and AGENTS.md, and ask for one rewrite when it breaks one (Claude Code)",
+      "default": true
     },
     "stuckCheck": {
       "type": "boolean",
@@ -128,53 +146,11 @@
       "description": "After repeated failed calls, ask Jev whether the agent is stuck on one approach and tell it to change course",
       "default": true
     },
-    "stuck": {
+    "injection": {
       "type": "number",
-      "title": "Stuck check threshold",
-      "description": "How sure Jev must be that the failures repeat one approach before the note (0-1)",
+      "title": "Injection probability to flag",
+      "description": "Flag tool output as an injection at this probability (0-1)",
       "default": 0.7
-    },
-    "trimOutput": {
-      "type": "boolean",
-      "title": "Trim long output",
-      "description": "Cut a long shell output to the parts your request needs, Jev rating each part",
-      "default": true
-    },
-    "trimOver": {
-      "type": "number",
-      "title": "Trim outputs longer than",
-      "description": "Characters of shell output before trimming is considered",
-      "default": 12000
-    },
-    "trimKeep": {
-      "type": "number",
-      "title": "Trim: keep a part at",
-      "description": "How likely Jev must rate a part as needed for it to stay (0-1)",
-      "default": 0.3
-    },
-    "skillPick": {
-      "type": "boolean",
-      "title": "Skill picker",
-      "description": "Leave the skill listing out of every prompt; Jev names the one skill a request needs (needs a Jev key)",
-      "default": true
-    },
-    "skillGate": {
-      "type": "number",
-      "title": "Skill picker: needs a skill at",
-      "description": "How strongly Jev must rate a request as needing a skill before one is named (0-1)",
-      "default": 0.3
-    },
-    "skillMin": {
-      "type": "number",
-      "title": "Skill picker: pick confidence",
-      "description": "How sure Jev must be of which skill fits (0-1)",
-      "default": 0.4
-    },
-    "requested": {
-      "type": "number",
-      "title": "Let through what you asked for",
-      "description": "A gate's Jev deny passes when Jev rates your latest message as asking for exactly that call at least this probable (0-1). Policy and path denies always stand",
-      "default": 0.8
     },
     "doneClaimed": {
       "type": "number",
@@ -194,40 +170,28 @@
       "description": "Skip when the reply asks the user something at or above this (0-1)",
       "default": 0.5
     },
-    "askJev": {
+    "stuck": {
+      "type": "number",
+      "title": "Stuck check threshold",
+      "description": "How sure Jev must be that the failures repeat one approach before the note (0-1)",
+      "default": 0.7
+    },
+    "autoApprove": {
       "type": "boolean",
-      "title": "ask_jev tool",
-      "description": "Give the model an ask_jev tool for quick judgments about repo files or text without reading them into context",
+      "title": "Auto-approve safe calls",
+      "description": "Where Claude Code would stop to ask you, run a command or in-repo edit Jev is sure is safe instead",
       "default": true
     },
-    "fastCompact": {
+    "trimOutput": {
       "type": "boolean",
-      "title": "Fast compaction",
-      "description": "Compact in about a second: Jev keeps the messages that still matter, verbatim, instead of a model writing a summary",
+      "title": "Trim long output",
+      "description": "Cut a long shell output to the parts your request needs, Jev rating each part",
       "default": true
     },
-    "maskSecrets": {
+    "skillPick": {
       "type": "boolean",
-      "title": "Mask secrets sent to Jev",
-      "description": "Replace keys, tokens, credentials in URLs, emails and your home folder with markers in everything sent to Jev",
-      "default": true
-    },
-    "proseCheck": {
-      "type": "boolean",
-      "title": "Writing-rule check",
-      "description": "Check the final reply against the writing rules in CLAUDE.md and AGENTS.md, and ask for one rewrite when it breaks one (Claude Code)",
-      "default": true
-    },
-    "subagentCheck": {
-      "type": "boolean",
-      "title": "Subagent checks",
-      "description": "Send a vague subagent brief back once, and check a subagent's done against its own tool record",
-      "default": true
-    },
-    "findCode": {
-      "type": "boolean",
-      "title": "find_code tool",
-      "description": "Give the model a find_code tool: Jev finds the files that carry out a described behaviour, even when the code names it differently",
+      "title": "Skill picker",
+      "description": "Leave the skill listing out of every prompt; Jev names the one skill a request needs (needs a Jev key)",
       "default": true
     },
     "readNarrow": {
@@ -236,11 +200,47 @@
       "description": "A Read of a 400+ line file comes back as the fifth Jev rates the request needs, with a note on how to read the rest. Saves tokens, adds about a second per big read",
       "default": false
     },
-    "browse": {
+    "approveConfidence": {
+      "type": "number",
+      "title": "Auto-approve: Jev's confidence",
+      "description": "How sure Jev must be that a command only reads or is reversible (0-1)",
+      "default": 0.9
+    },
+    "approveRiskMax": {
+      "type": "number",
+      "title": "Auto-approve: highest risk",
+      "description": "Destructive, data-leaving or credential probability under which a call is approved (0-1)",
+      "default": 0.2
+    },
+    "trimOver": {
+      "type": "number",
+      "title": "Trim outputs longer than",
+      "description": "Characters of shell output before trimming is considered",
+      "default": 12000
+    },
+    "trimKeep": {
+      "type": "number",
+      "title": "Trim: keep a part at",
+      "description": "How likely Jev must rate a part as needed for it to stay (0-1)",
+      "default": 0.3
+    },
+    "skillGate": {
+      "type": "number",
+      "title": "Skill picker: needs a skill at",
+      "description": "How strongly Jev must rate a request as needing a skill before one is named (0-1)",
+      "default": 0.3
+    },
+    "skillMin": {
+      "type": "number",
+      "title": "Skill picker: pick confidence",
+      "description": "How sure Jev must be of which skill fits (0-1)",
+      "default": 0.4
+    },
+    "fastCompact": {
       "type": "boolean",
-      "title": "browse tool",
-      "description": "Give the model a browse tool: jev-ultrafast does a task in your Chrome, Jev picking each step. Needs uv, Chrome remote debugging, and OPENROUTER_API_KEY to type into fields",
-      "default": false
+      "title": "Fast compaction",
+      "description": "Compact in about a second: Jev keeps the messages that still matter, verbatim, instead of a model writing a summary",
+      "default": true
     },
     "autoCompact": {
       "type": "boolean",
@@ -284,24 +284,6 @@
       "description": "Also switch the main model per turn (discards the warm prompt cache)",
       "default": false
     },
-    "routeUpgrade": {
-      "type": "number",
-      "title": "Router: confidence to move up",
-      "description": "Raise effort or tier at this confidence or above (0-1)",
-      "default": 0.3
-    },
-    "routeDowngrade": {
-      "type": "number",
-      "title": "Router: confidence to move down",
-      "description": "Lower effort or tier at this confidence or above (0-1)",
-      "default": 0.6
-    },
-    "routeRisky": {
-      "type": "number",
-      "title": "Router: risky forces deep",
-      "description": "At this probability a request touching prod, money or credentials goes deep with at least high effort (0-1)",
-      "default": 0.7
-    },
     "routeWithoutKey": {
       "type": "boolean",
       "title": "Router: built-in classifier without a key",
@@ -326,23 +308,41 @@
       "description": "Model id for the deep tier",
       "default": "claude-opus-5-5"
     },
-    "allowPaths": {
-      "type": "string",
-      "title": "Allowed write paths outside the repo",
-      "description": "Separated by ; (~ and $TMPDIR expand)",
-      "default": "~/.claude;$TMPDIR;/tmp"
-    },
-    "policies": {
-      "type": "string",
-      "title": "Policies",
-      "description": "Your own rules every gate weighs, separated by ; (e.g. never touch prod; no deploys on Friday)",
-      "default": ""
-    },
-    "timeoutMs": {
+    "routeUpgrade": {
       "type": "number",
-      "title": "Jev timeout (ms)",
-      "description": "How long a gate, screen or the router waits for Jev before letting the call through",
-      "default": 1500
+      "title": "Router: confidence to move up",
+      "description": "Raise effort or tier at this confidence or above (0-1)",
+      "default": 0.3
+    },
+    "routeDowngrade": {
+      "type": "number",
+      "title": "Router: confidence to move down",
+      "description": "Lower effort or tier at this confidence or above (0-1)",
+      "default": 0.6
+    },
+    "routeRisky": {
+      "type": "number",
+      "title": "Router: risky forces deep",
+      "description": "At this probability a request touching prod, money or credentials goes deep with at least high effort (0-1)",
+      "default": 0.7
+    },
+    "askJev": {
+      "type": "boolean",
+      "title": "ask_jev tool",
+      "description": "Give the model an ask_jev tool for quick judgments about repo files or text without reading them into context",
+      "default": true
+    },
+    "findCode": {
+      "type": "boolean",
+      "title": "find_code tool",
+      "description": "Give the model a find_code tool: Jev finds the files that carry out a described behaviour, even when the code names it differently",
+      "default": true
+    },
+    "browse": {
+      "type": "boolean",
+      "title": "browse tool",
+      "description": "Give the model a browse tool: jev-ultrafast does a task in your Chrome, Jev picking each step. Needs uv, Chrome remote debugging, and OPENROUTER_API_KEY to type into fields",
+      "default": false
     },
     "logDecisions": {
       "type": "boolean",

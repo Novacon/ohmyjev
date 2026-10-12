@@ -185,9 +185,17 @@ test('plain reads skip Jev; anything that could write or run more does not', () 
 
 test('/omj config lists, changes one setting for the session, and never takes the key', () => {
   const p = 'persist hint'
-  expect(configCommand(c, '', p).text).toContain('bashGate: true')
+  const overview = configCommand(c, '', p).text
+  expect(overview).toContain('gates       bashGate: on · writeGate: on')
+  expect(overview).not.toContain('bashIrreversible') // thresholds live one level down
+  const gates = configCommand(c, 'gates', p).text
+  expect(gates).toContain('  bashIrreversible: 0.6')
+  expect(gates).not.toContain('routeEffort')
   expect(configCommand(c, 'bashGate off', p).c.bashGate).toBe(false)
+  expect(configCommand(c, 'bashGate off', p).text).toContain('bashGate: off * for this session')
   expect(configCommand(c, 'requested 0.9', p).c.requested).toBe(0.9)
+  expect(configCommand(configCommand(c, 'requested 0.9', p).c, 'gates', p).text).toContain('requested: 0.9 *')
+  expect(configCommand(c, 'nope', p).text).toContain('lists the sections (jev, gates')
   expect(configCommand(c, 'policies never touch prod; no Friday deploys', p).c.policies).toBe('never touch prod; no Friday deploys')
   expect(configCommand(c, 'bashGate maybe', p).text).toContain('on or off')
   expect(configCommand(c, 'timeoutMs fast', p).text).toContain('a number')

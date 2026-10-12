@@ -163,8 +163,9 @@ Settings go under `ohmyjev` in `~/.pi/agent/settings.json`, or `.pi/settings.jso
 { "ohmyjev": { "routeMainModel": true, "fastModel": "anthropic/claude-haiku-5-5" } }
 ```
 
-Running Claude Code inside pi through pi-claude-bridge? pi runs the tools, so pi's copy of ohmyjev checks them and the
-Claude Code copy leaves them alone. Keep pi's gates on, and use `/omj off` in pi.
+Running Claude Code inside pi through pi-claude-bridge? pi runs every tool, so pi's copy of ohmyjev checks them and the
+Claude Code copy stands down for the session: it sees pi's `OHMYJEV_PI`, registers no tools, and gates nothing. The
+`/omj` you type in pi is the one that counts.
 
 ### By host
 
@@ -234,8 +235,10 @@ denies: Bash 1
 key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0
 ```
 
-`/omj config` lists every setting, and `/omj config <name> <value>` changes one for the session. `/omj stats` opens a
-dashboard of every session at `~/.ohmyjev/dashboard.html`. `/omj off` turns everything off for the session.
+`/omj config` shows the settings by section, one line each: `jev`, `gates`, `checks`, `speed`, `compaction`, `router`,
+`tools`, and `display`. `/omj config gates` opens one, thresholds included, and `/omj config <name> <value>` changes
+one for the session. A `*` marks a value that differs from the default. `/omj stats` opens a dashboard of every session
+at `~/.ohmyjev/dashboard.html`. `/omj off` turns everything off for the session.
 
 ### Your own rules
 
@@ -259,8 +262,10 @@ To put it in your own statusline script, copy `jev_segment()` from
 
 ## Settings
 
-Change any setting for the session with `/omj config <name> <value>`. To keep it, use `/plugin configure
-ohmyjev@ohmyjev` then `/reload-plugins` in Claude Code, `omp plugin config set` in omp, or each host's settings file.
+`/omj config` shows the settings by section, and `/omj config <section>` lists one. Change any setting for the session
+with `/omj config <name> <value>`. To keep it, use `/plugin configure ohmyjev@ohmyjev` then `/reload-plugins` in Claude
+Code, `omp plugin config set` in omp, or each host's settings file. The host dialogs list the settings in the same order:
+switches first, thresholds after, section by section.
 
 | Setting | Default | What it does |
 |---|---|---|

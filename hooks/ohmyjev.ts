@@ -11,7 +11,7 @@ import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from './jev.ts'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
-  buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
+  ASK_DESCRIPTION, ASK_SCHEMA, buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
   BROWSE_DESCRIPTION, BROWSE_SCHEMA, BROWSE_TIMEOUT_MS, browseCommand, browseReply, STUCK_Q, BRIEF_Q, maskSecrets, SUBAGENT_DONE_REASON, judgeBrief, fitsQuestion, pickSkill, skillFits, skillNote, skillQuestions, trimChunks, trimRequest, trimmed, approveBash, approveWrite, failureOf, judgeStuck, stuckDue, stuckState, type Failure, callSummary, clipTail, configCommand, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, toggleArg,
   type Config, type Judged, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
@@ -35,18 +35,13 @@ const arg = (e: unknown, k: string): string => {
 
 /**
  * pi's own tools bridged in by pi-claude-bridge (`mcp__custom-tools__bash`) run on this machine: they get the native
- * tool's gate, never the exfil gate meant for outside services. pi spells a path `path` and an edit `edits`.
+ * tool's gate, never the exfil gate meant for outside services. pi spells a path `path` and an edit `edits`. Kept for
+ * a bridge whose pi has no ohmyjev: with pi's ohmyjev loaded (it sets OHMYJEV_PI) this whole copy stands down at
+ * session.start, since pi runs and gates every call before a verdict here could reach it.
  */
 const BRIDGED: Record<string, string> = { bash: 'Bash', read: 'Read', write: 'Write', edit: 'Edit' }
 const kindOf = (tool: string): string => BRIDGED[/^mcp__custom-tools__(\w+)$/.exec(tool)?.[1] ?? ''] ?? tool
-
-/**
- * A pi tool the bridge already ran: pi executes the call before this hook's verdict reaches it, so a deny here would
- * only tell the model "blocked" about a call that happened. pi's own ohmyjev (it sets OHMYJEV_PI) gates it instead.
- */
-async function ranByPi($: $, tool: string): Promise<boolean> {
-  return tool.startsWith('mcp__custom-tools__') && (await $.env.get('OHMYJEV_PI')) === '1'
-}
+const UNDER_PI = "under pi-claude-bridge: pi's ohmyjev gates every call, so this copy stands down (no tools, gates, or router here)"
 /** The local path a file call names, as the host's tool opens it; null for another machine (deny). */
 const pathOf = (e: unknown): string | null => hostPath(arg(e, 'file_path') || arg(e, 'notebook_path') || arg(e, 'path'))
 
@@ -482,23 +477,6 @@ async function checkStuck($: $, e: { tool: string }, r: ToolCallResult): Promise
 
 // --- ask_jev: a judgment about repo files or text, without reading them into the model's context ---
 
-const ASK_DESCRIPTION =
-  'Ask Jev, a fast (~300 ms) and nearly free decision model, one question about repo files or text: yes/no (noul), ' +
-  'multiple choice (choice), or a position on levels (score). Use it for a judgment ABOUT content without reading it ' +
-  'into your context: is this file relevant, does this log show the failure, which of these is riskiest. Read the file ' +
-  'yourself when you need to edit or quote it. Values under ~0.7 mean Jev is unsure.'
-const ASK_SCHEMA = {
-  type: 'object',
-  properties: {
-    question: { type: 'string', description: 'The question, about `files` and/or `state`' },
-    type: { type: 'string', enum: ['noul', 'choice', 'score'], description: 'noul = probability of yes; choice = one of options; score = a position on options as levels, low to high' },
-    options: { type: 'array', items: { type: 'string' }, description: 'choice labels, or 2-10 score levels from low to high' },
-    files: { type: 'array', items: { type: 'string' }, description: 'Repo file paths whose contents Jev reads (not you)' },
-    folder: { type: 'string', description: 'With type noul: ask the question of every source file under this repo folder; returns only the files that answer yes, with the line' },
-    state: { type: 'string', description: 'Any other text Jev should judge' },
-  },
-  required: ['question', 'type'],
-}
 const ASK_FILE = 8000
 const ASK_TOTAL = 80000
 
@@ -743,12 +721,17 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
+    if ((await $.env.get('OHMYJEV_PI')) === '1') {
+      c = { ...c, enabled: false } // every handler keys off c.enabled; pi's copy already provides the tools and /omj
+      say($, UNDER_PI)
+      return next(e)
+    }
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
     if (c.browse) await $.tool.register({ name: 'browse', description: BROWSE_DESCRIPTION, inputSchema: BROWSE_SCHEMA }).catch(() => undefined)
     if (c.enabled && c.proseCheck && (await keyOf($, c))) void loadProseRules($).catch(() => undefined)
     if (c.findCode) await $.tool.register({ name: 'find_code', description: FIND_DESCRIPTION, inputSchema: FIND_SCHEMA }).catch(() => undefined)
     for (const name of ['omj', 'ohmyjev'])
-      await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", argumentHint: '[stats|config [name value]|on|off]' }).catch(() => undefined)
+      await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", argumentHint: '[stats|config [section|name value]|on|off]' }).catch(() => undefined)
     const k = await keyOf($, c)
     say(
       $,
@@ -808,7 +791,7 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
     if (e.tool === ASK) return answerAsk($, e as Record<string, unknown>)
     if (e.tool === FIND) return answerFind($, e as Record<string, unknown>)
-    if (c.enabled && c.readNarrow && kindOf(String(e.tool)) === 'Read' && !(await ranByPi($, String(e.tool)))) {
+    if (c.enabled && c.readNarrow && kindOf(String(e.tool)) === 'Read') {
       const narrowed = await narrowCall($, e as Record<string, unknown>)
       if (narrowed) {
         const r = await screenResult($, e, await next({ ...e, offset: narrowed.n.offset, limit: narrowed.n.limit } as typeof e))
@@ -821,7 +804,7 @@ export const register: Register = (on, options) => {
       const r = await runBrowse($, e as Record<string, unknown>)
       return c.enabled ? screenResult($, e, r) : r
     }
-    if (!c.enabled || (await ranByPi($, String(e.tool)))) return next(e)
+    if (!c.enabled) return next(e)
     const denied = await gate($, e)
     if (denied) return { deny: denied }
     return checkStuck($, e, await screenResult($, e, await trimResult($, e, await next(e))))

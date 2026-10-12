@@ -585,23 +585,57 @@ export type LogEntry = {
 
 // --- ask_jev, /omj and /ohmyjev ---
 
-export const OMJ_HELP = 'usage: /omj [stats|config [name value]|on|off]. /ohmyjev is the same command.'
+export const OMJ_HELP = 'usage: /omj [stats|config [section|name value]|on|off]. /ohmyjev is the same command.'
 export const DASHBOARD = 'dashboard.html'
 export const OMJ_OFF = 'ohmyjev off for this session: every call passes through. /omj on turns it back. The enabled setting is the default for new sessions.'
 export const OMJ_ON = 'ohmyjev on: gates, screens, done-check and router are back for this session.'
 /** `/omj on|off` as the new enabled value; undefined for any other argument. */
 export const toggleArg = (args: string): boolean | undefined => ({ on: true, off: false })[args.trim() as 'on' | 'off']
-/** /omj settings: every setting's current value, the key only as set or not. */
 /**
- * /omj config: no name lists every setting; `name value` changes one for this session. The key is never set here, so
- * it never lands in the transcript. `persist` is the host's own way to make a change stick.
+ * The settings by section, in the order every settings screen shows them (plugin.json and package.json follow this;
+ * tests check). Each section's switches and text come first, its thresholds after: /omj config shows the first, and
+ * /omj config <section> all of it.
+ */
+export const SECTIONS = {
+  jev: ['enabled', 'apiKey', 'jevModel', 'maskSecrets', 'timeoutMs'],
+  gates: ['bashGate', 'writeGate', 'exfilGate', 'policies', 'allowPaths', 'bashIrreversible', 'bashDestructive', 'writeSecret', 'writeSecretsKind', 'exfil', 'requested'],
+  checks: ['injectionScreen', 'screenReads', 'doneCheck', 'subagentCheck', 'proseCheck', 'stuckCheck', 'injection', 'doneClaimed', 'doneVerifiedMax', 'doneAsksUserMax', 'stuck'],
+  speed: ['autoApprove', 'trimOutput', 'skillPick', 'readNarrow', 'approveConfidence', 'approveRiskMax', 'trimOver', 'trimKeep', 'skillGate', 'skillMin'],
+  compaction: ['fastCompact', 'autoCompact', 'compactSwitched', 'compactBoundary', 'compactMinPercent'],
+  router: ['routeEffort', 'routeSubagents', 'routeMainModel', 'routeWithoutKey', 'fastModel', 'balancedModel', 'deepModel', 'routeUpgrade', 'routeDowngrade', 'routeRisky'],
+  tools: ['askJev', 'findCode', 'browse'],
+  display: ['logDecisions', 'statusLine'],
+} as const satisfies Record<string, readonly (keyof Config)[]>
+export type Section = keyof typeof SECTIONS
+
+/** A setting as /omj config shows it: on/off, (empty), the key only as set or not, and `*` when it differs from the default. */
+const showSetting = (c: Config, k: keyof Config): string => {
+  const v = c[k]
+  const shown = k === 'apiKey' ? (v ? 'set (hidden)' : 'not set') : typeof v === 'boolean' ? (v ? 'on' : 'off') : v === '' ? '(empty)' : String(v)
+  return `${k}: ${shown}${v === DEFAULTS[k] ? '' : ' *'}`
+}
+
+/** Every setting in a section, or only its switches and text (`brief`): numbers are the thresholds. */
+export const settingsRows = (c: Config, section: Section, brief = false): string[] =>
+  SECTIONS[section].filter(k => !brief || typeof DEFAULTS[k] !== 'number').map(k => showSetting(c, k))
+
+/**
+ * /omj config: no argument shows each section's switches on one line; a section name lists all of it, thresholds
+ * included; `name value` changes one for this session. The key is never set here, so it never lands in the transcript.
+ * `persist` is the host's own way to make a change stick.
  */
 export function configCommand(c: Config, args: string, persist: string): { c: Config; text: string } {
   const [name = '', ...rest] = args.trim().split(/\s+/)
   const value = rest.join(' ')
-  if (!name) return { c, text: [...settingsRows(c), '', `Change one for this session with /omj config <name> <value>. ${persist}`].join('\n') }
+  const sections = Object.keys(SECTIONS) as Section[]
+  const change = `/omj config <name> <value> changes one for this session. ${persist}`
+  if (!name) {
+    const width = Math.max(...sections.map(s => s.length))
+    return { c, text: [...sections.map(s => `${s.padEnd(width)}  ${settingsRows(c, s, true).join(' · ')}`), '', `* changed from the default. /omj config <section> shows its thresholds too. ${change}`].join('\n') }
+  }
+  if (name in SECTIONS && !value) return { c, text: [`${name}:`, ...settingsRows(c, name as Section).map(r => `  ${r}`), '', change].join('\n') }
   if (!(name in DEFAULTS) || name === 'apiKey')
-    return { c, text: name === 'apiKey' ? `apiKey is not set here, so it never lands in the transcript. ${persist}` : `no setting named ${name}. /omj config lists them.` }
+    return { c, text: name === 'apiKey' ? `apiKey is not set here, so it never lands in the transcript. ${persist}` : `no setting named ${name}. /omj config lists the sections (${sections.join(', ')}), and /omj config <section> the settings in one.` }
   const key = name as keyof Config
   const was = DEFAULTS[key]
   let next: unknown
@@ -609,11 +643,28 @@ export function configCommand(c: Config, args: string, persist: string): { c: Co
   else if (typeof was === 'number') next = value.trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : undefined
   else next = value
   if (next === undefined) return { c, text: `${name} takes ${typeof was === 'boolean' ? 'on or off' : 'a number'}, got "${value}".` }
-  return { c: { ...c, [key]: next }, text: `${name}: ${next === '' ? '(empty)' : String(next)} for this session. ${persist}` }
+  const changed = { ...c, [key]: next } as Config
+  return { c: changed, text: `${showSetting(changed, key)} for this session. ${persist}` }
 }
 
-export const settingsRows = (c: Config): string[] =>
-  Object.entries(c).map(([k, v]) => (k === 'apiKey' ? `apiKey: ${v ? 'set (hidden)' : 'not set'}` : `${k}: ${v === '' ? '(empty)' : String(v)}`))
+export const ASK_DESCRIPTION =
+  'Ask Jev, a fast (~300 ms) and nearly free decision model, one question about repo files or text: yes/no (noul), ' +
+  'multiple choice (choice), or a position on levels (score). Use it for a judgment ABOUT content without reading it ' +
+  'into your context: is this file relevant, does this log show the failure, which of these is riskiest. Read the file ' +
+  'yourself when you need to edit or quote it. Values under ~0.7 mean Jev is unsure.'
+/** JSON Schema of ask_jev's input; each host wraps it in its own schema type. */
+export const ASK_SCHEMA = {
+  type: 'object',
+  properties: {
+    question: { type: 'string', description: 'The question, about `files` and/or `state`' },
+    type: { type: 'string', enum: ['noul', 'choice', 'score'], description: 'noul = probability of yes; choice = one of options; score = a position on options as levels, low to high' },
+    options: { type: 'array', items: { type: 'string' }, description: 'choice labels, or 2-10 score levels from low to high' },
+    files: { type: 'array', items: { type: 'string' }, description: 'Repo file paths whose contents Jev reads (not you)' },
+    folder: { type: 'string', description: 'With type noul: ask the question of every source file under this repo folder; returns only the files that answer yes, with the line' },
+    state: { type: 'string', description: 'Any other text Jev should judge' },
+  },
+  required: ['question', 'type'],
+}
 
 /** The model's ask_jev input as one Jev question, or the error text to hand back. */
 export function buildQuestion(i: { question?: unknown; type?: unknown; options?: unknown }): Question | string {

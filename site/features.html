@@ -52,7 +52,7 @@
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3M12 15v2"/></svg><span class="kind gate">Safer</span></div><h3>Secret masking</h3><p>Keys, tokens, URL credentials, emails, and your home folder become markers before anything goes to Jev.</p><p class="cfg">maskSecrets</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zM14.5 14.5L20 20"/></svg><span class="kind fast">Faster</span></div><h3>find_code</h3><p>Finds code by what it does, even when it's named something else. Returns the file and line, or no match.</p><p class="cfg">findCode</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about files without reading them. Give it a folder and it asks every file, returning the yes ones.</p><p class="cfg">askJev</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind ">Tool</span></div><h3>/omj config</h3><p>See and change settings without a reload.</p><p class="cfg">slash command</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind ">Tool</span></div><h3>/omj config</h3><p>Settings by section. Open one, change one, no reload.</p><p class="cfg">slash command</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/omj</h3><p>This session's calls, cost, and blocks. Also <code>/omj stats</code>, <code>/omj off</code>, and <code>/omj on</code>.</p><p class="cfg">slash command · enabled</p></div>
         </div>
       </div>
@@ -191,7 +191,7 @@ key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0</pre></div>
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">05 / Settings <span>/omj config</span></p><h2>tune <em>it</em></h2>
-        <p class="lede">Change any setting for the session with <code>/omj config &lt;name&gt; &lt;value&gt;</code>.</p>
+        <p class="lede"><code>/omj config</code> shows the settings by section, <code>/omj config gates</code> opens one, and <code>/omj config &lt;name&gt; &lt;value&gt;</code> changes one for the session.</p>
       </div>
       <div class="body reveal main-last">
         <div class="table">

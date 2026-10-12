@@ -392,6 +392,7 @@ function statusText(s, now, enabled = true) {
   return [`jev ✓${s.calls}`, s.denies ? `⛔${s.denies}` : "", s.lastRoute, s.compactions ? `\uD83D\uDDDC${s.compactions}` : ""].filter(Boolean).join(" ");
 }
 var DASHBOARD = "dashboard.html";
+var ASK_DESCRIPTION = "Ask Jev, a fast (~300 ms) and nearly free decision model, one question about repo files or text: yes/no (noul), " + "multiple choice (choice), or a position on levels (score). Use it for a judgment ABOUT content without reading it " + "into your context: is this file relevant, does this log show the failure, which of these is riskiest. Read the file " + "yourself when you need to edit or quote it. Values under ~0.7 mean Jev is unsure.";
 function parseLog(log) {
   const rows = [];
   for (const line of log.split(`
@@ -990,7 +991,6 @@ async function pathAllowed(spelled, cwd, root, c, env, withAllowPaths = true) {
   const targets = [await place(rawAbsolute(path, cwd, home)), await place(absolute(path, cwd, home))];
   return targets.every((t) => t !== null && roots.some((r) => isUnder(t, r)));
 }
-var ASK_DESCRIPTION = "Ask Jev, a fast (~300 ms) and nearly free decision model, one question about repo files or text: yes/no (noul), " + "multiple choice (choice), or a position on levels (score). Use it for a judgment ABOUT content without reading it " + "into your context: is this file relevant, does this log show the failure, which of these is riskiest. Read the file " + "yourself when you need to edit or quote it. Values under ~0.7 mean Jev is unsure.";
 var newStuck = () => ({ failures: [], askedAt: 0 });
 async function stuckNote(x, st, request, tool, input, output) {
   if (!x.c.enabled || !x.c.stuckCheck)

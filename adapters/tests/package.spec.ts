@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { readFile, readdir } from 'node:fs/promises'
+import { DEFAULTS, SECTIONS } from '../../hooks/policy.ts'
 
 /** 0.3.1 shipped without hooks/dashboard.ts and pi failed to start: every hooks file the adapters reach must be in `files`. */
 test('the npm package ships every hooks file the adapters import', async () => {
@@ -17,6 +18,17 @@ test('the npm package ships every hooks file the adapters import', async () => {
   for (const n of await readdir('adapters')) if (n.endsWith('.ts')) await scan(`adapters/${n}`)
   expect(needed.size).toBeGreaterThan(0)
   for (const f of needed) expect(pkg.files, `${f} is missing from package.json files`).toContain(f)
+})
+
+/** Both settings screens list the settings in SECTIONS order, so the flat host dialogs read as sections too. */
+test('every setting is in one section, and the plugin and omp schemas follow that order', async () => {
+  const order: string[] = Object.values(SECTIONS).flat()
+  expect([...order].sort()).toEqual(Object.keys(DEFAULTS).sort())
+  expect(new Set(order).size).toBe(order.length)
+  const plugin = JSON.parse(await readFile('.claude-plugin/plugin.json', 'utf8')) as { userConfig: Record<string, unknown> }
+  const pkg = JSON.parse(await readFile('package.json', 'utf8')) as { omp: { settings: Record<string, unknown> } }
+  expect(Object.keys(plugin.userConfig)).toEqual(order)
+  expect(Object.keys(pkg.omp.settings)).toEqual(order)
 })
 
 test('package.json, the Claude Code plugin and the Codex plugin carry the same version', async () => {
