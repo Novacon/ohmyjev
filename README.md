@@ -1,16 +1,9 @@
-```
-Y88b                   888                               d8b
- Y88b                  888                               Y8P
-  Y88b                 888
-   Y88b        .d88b.  88888b.  88888b.d88b.  888  888  8888  .d88b.  888  888
-   d88P       d88""88b 888 "88b 888 "888 "88b 888  888  "888 d8P  Y8b 888  888
-  d88P        888  888 888  888 888  888  888 888  888   888 88888888 Y88  88P
- d88P         Y88..88P 888  888 888  888  888 Y88b 888   888 Y8b.      Y8bd8P
-d88P  88888888 "Y88P"  888  888 888  888  888  "Y88888   888  "Y8888    Y88P
-                                                   888   888
-                                              Y8b d88P  d88P
-                                               "Y88P" 888P"
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/logo-light.png">
+    <img src="docs/logo.png" alt="ohmyjev" width="420">
+  </picture>
+</p>
 
 <p align="center">
   <a href="https://typesafe.ai">Jev</a>, batteries included, for Claude Code, Codex, pi and omp.<br>
@@ -19,8 +12,8 @@ d88P  88888888 "Y88P"  888  888 888  888  888  "Y88888   888  "Y8888    Y88P
 
 <p align="center">
   <img alt="Claude Code 2.1.287+" src="https://img.shields.io/badge/Claude_Code-2.1.287%2B-d97757">
-  <img alt="Decided by Jev" src="https://img.shields.io/badge/decided_by-Jev-101315">
-  <img alt="Codex, pi and omp" src="https://img.shields.io/badge/also_for-Codex_·_pi_·_omp-86a893">
+  <img alt="Decided by Jev" src="https://img.shields.io/badge/decided_by-Jev-9d78ff">
+  <img alt="Codex, pi and omp" src="https://img.shields.io/badge/also_for-Codex_·_pi_·_omp-b69cff">
   <a href="https://www.npmjs.com/package/ohmyjev"><img alt="npm" src="https://img.shields.io/npm/v/ohmyjev?color=de6145"></a>
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-798186">
 </p>

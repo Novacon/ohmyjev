@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Guardrails for Codex, decided by Jev: blocks irreversible and data-leaking commands, even in full-auto, and runs them when you say yes.",
   "author": {
     "name": "Novacon",
@@ -27,6 +27,6 @@
       "Read"
     ],
     "websiteURL": "https://ohmyjev.xyz",
-    "brandColor": "#00EE22"
+    "brandColor": "#9D78FF"
   }
 }

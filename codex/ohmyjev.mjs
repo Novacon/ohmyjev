@@ -466,7 +466,8 @@ import { execFile } from "node:child_process";
 import { appendFile, chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 
 // hooks/dashboard.ts
-var FONTS = "https://ohmyjev.xyz/fonts";
+var SITE = "https://ohmyjev.xyz";
+var FONTS = `${SITE}/fonts`;
 var DAYS = 30;
 var esc = (s) => String(s ?? "").replace(/[&<>"']/g, (ch2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch2]);
 var day = (ts) => new Date(ts).toISOString().slice(0, 10);
@@ -541,8 +542,8 @@ function dashboardHtml(rows, opts) {
 @font-face { font-family: "JetBrains Mono"; src: url("${FONTS}/JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 :root {
   --ground: #0a0a0a; --surface: #131313; --panel: rgba(19, 19, 19, .9); --panel-hi: rgba(28, 28, 28, .94);
-  --paper: #f4f8f5; --muted: #a5b5a9; --faint: #829487; --line: #2e2e2e; --steel: #829487;
-  --brand: #00ee22; --brand-hi: #39ff53; --link: #79ff98; --lavender: #b69cff;
+  --paper: #f5f3fa; --muted: #b3aec2; --faint: #91899f; --line: #2e2e2e; --steel: #91899f;
+  --brand: #9d78ff; --brand-hi: #b69cff; --link: #c9b8ff; --lavender: #b69cff;
   --ok: #56e887; --warn: #ffc857; --err: #ff737d; --info: #74c7ff;
   --ui: clamp(.875rem, .82rem + .15vw, 1rem);
   --logo: "Changa", "Space Grotesk", system-ui, sans-serif; --display: "Space Grotesk", system-ui, sans-serif;
@@ -558,7 +559,7 @@ body {
   background-image: linear-gradient(rgba(140, 140, 140, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(140, 140, 140, .07) 1px, transparent 1px);
   background-size: 64px 64px;
 }
-::selection { background: rgba(0, 238, 34, .3); color: var(--paper); }
+::selection { background: rgba(157, 120, 255, .3); color: var(--paper); }
 a { color: inherit; text-decoration: none; }
 :focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
 code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
@@ -595,12 +596,12 @@ section { margin-bottom: clamp(24px, 4vh, 44px); }
 .chart { display: flex; align-items: flex-end; gap: 3px; height: 160px; padding-top: 8px; border-bottom: 1px solid var(--line); }
 .bar { position: relative; flex: 1; height: 100%; min-width: 0; }
 .bar i, .bar b { position: absolute; left: 0; right: 0; bottom: 0; display: block; }
-.bar i { background: rgba(0, 238, 34, .45); transition: background .2s ease; }
+.bar i { background: rgba(157, 120, 255, .45); transition: background .2s ease; }
 .bar b { background: var(--err); }
 .bar:hover i { background: var(--brand-hi); }
 .axis { display: flex; justify-content: space-between; color: var(--faint); font: .75rem var(--mono); padding-top: 6px; }
 .legend { display: flex; gap: 18px; color: var(--faint); font: 600 .75rem var(--label); letter-spacing: .06em; text-transform: uppercase; }
-.legend i { display: inline-block; width: 10px; height: 10px; vertical-align: -1px; margin-right: 6px; background: rgba(0, 238, 34, .45); }
+.legend i { display: inline-block; width: 10px; height: 10px; vertical-align: -1px; margin-right: 6px; background: rgba(157, 120, 255, .45); }
 .legend i.o { background: var(--err); }
 .tbl { overflow: auto; border: 1px solid var(--line); scrollbar-width: thin; }
 table { width: 100%; border-collapse: collapse; }
@@ -611,7 +612,7 @@ tr:hover td { background: var(--panel-hi); }
 td:first-child, td:nth-child(2) { white-space: nowrap; }
 td.o { color: var(--err); }
 .g { color: var(--ok); }
-.me td { background: rgba(0, 238, 34, .06); }
+.me td { background: rgba(157, 120, 255, .06); }
 .empty { padding: 18px 14px; color: var(--faint); }
 .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--faint); font-size: .875rem; }
 .foot a { color: var(--link); }
@@ -620,7 +621,7 @@ td.o { color: var(--err); }
 </style></head>
 <body>
 <header class="header">
-  <a class="brand" href="https://ohmyjev.xyz" aria-label="ohmyjev"><span class="acc">&gt;_</span>ohmy<span class="acc">jev</span></a>
+  <a class="brand" href="https://ohmyjev.xyz" aria-label="ohmyjev"><img src="${SITE}/logo.webp" alt="ohmyjev" height="40"></a>
   <div class="lbl">stats <span>·</span> ${esc(when(opts.now))} UTC${opts.source ? ` <span>·</span> ${esc(opts.source)}` : ""}</div>
 </header>
 <p class="section-label lbl">What Jev decided <span>every session on this machine</span></p>
