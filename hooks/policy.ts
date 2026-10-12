@@ -758,7 +758,8 @@ export function browseCommand(
       ? { TEXT_MODEL_API_KEY: env.OPENROUTER_API_KEY, TEXT_MODEL_BASE_URL: 'https://openrouter.ai/api/v1', TEXT_MODEL: 'inception/mercury-2.5', TEXT_MODEL_REASONING: 'none' }
       : {}
   return {
-    argv: ['uv', 'run', '--no-project', '--quiet', '--with', JEV_ULTRAFAST, 'python', '-c', BROWSE_PY, url, goal],
+    // uv's own Python: a PATH python can be the wrong architecture or version (an Intel python3.13 on Apple silicon)
+    argv: ['uv', 'run', '--no-project', '--quiet', '--python-preference', 'only-managed', '--python', '3.12', '--with', JEV_ULTRAFAST, 'python', '-c', BROWSE_PY, url, goal],
     env: { TYPESAFE_API_KEY: typesafe, ...text, ...(Array.isArray(input.values) ? { OMJ_BROWSE_VALUES: JSON.stringify(input.values.filter(v => typeof v === 'string').slice(0, 20)) } : {}) },
   }
 }
