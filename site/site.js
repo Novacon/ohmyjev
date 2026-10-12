@@ -266,6 +266,11 @@ function trackSlide() {
   if (i !== activeSlide) setSlide(i);
 }
 addEventListener('scroll', () => { trackFrame ||= requestAnimationFrame(trackSlide); }, { passive: true });
+// a slide taller than the screen opts out of the pinned exit in style.css, so its bottom stays readable
+const markTall = () => slides.forEach(s => s.classList.toggle('tall', s.offsetHeight > innerHeight + 1));
+markTall();
+addEventListener('resize', markTall, { passive: true });
+document.fonts?.ready.then(markTall);
 setSlide(0);
 trackSlide();
 

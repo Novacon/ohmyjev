@@ -469,3 +469,20 @@ td.n { font-family: var(--mono); font-size: .8125rem; font-variant-numeric: tabu
   body::after { display: none; }
   .slide { padding-bottom: 56px; }
 }
+
+/* slide to slide, where scroll-driven animations exist (desktop only, like the snap): a leaving slide holds still,
+   shrinks and fades while the next one rides up over it, and content rises with the scroll, both ways. A slide
+   taller than the screen (.tall, set by site.js) scrolls normally so none of it is hidden. */
+@supports (animation-timeline: view()) {
+  @media (min-width: 821px) and (prefers-reduced-motion: no-preference) {
+    .slide.doc { view-timeline: --slide; }
+    /* the slide's children move, not the slide: a moved slide drags its own snap point along */
+    .slide.doc:not(.tall) > * { animation: slide-away linear both; animation-timeline: --slide; animation-range: exit; transform-origin: 50% 0; }
+    .js .slide .reveal, .js .slide.visible .reveal {
+      opacity: 1; transform: none; transition: none;
+      animation: rise linear both; animation-timeline: view(); animation-range: entry 0% entry 80%;
+    }
+  }
+}
+@keyframes slide-away { to { transform: translateY(100vh) scale(.9); opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(40px); } }
