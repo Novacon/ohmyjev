@@ -7,7 +7,7 @@ import {
   type Config, type Route,
 } from '../hooks/policy.ts'
 import {
-  ASK_DESCRIPTION, ASK_SCHEMA, Session, answerAsk, newStuck, runBrowse, stuckNote, trimOutput, keyOf, pathAllowed, repoRoot,
+  ASK_DESCRIPTION, ASK_SCHEMA, FIND_DESCRIPTION, FIND_SCHEMA, Session, answerAsk, answerFind, newStuck, runBrowse, stuckNote, trimOutput, keyOf, pathAllowed, repoRoot,
   type Env, type Fetch,
 } from './shared.ts'
 
@@ -358,6 +358,24 @@ export function createExtension(options: PiAdapterOptions = {}) {
       })
       askRegistered = true
     }
+    let findRegistered = false
+    const registerFind = (): void => {
+      if (findRegistered || !c.findCode) return
+      pi.registerTool({
+        name: 'find_code',
+        label: 'Find code',
+        description: FIND_DESCRIPTION,
+        parameters: FIND_SCHEMA,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+          try {
+            return { content: [{ type: 'text', text: await answerFind(await ensureSession(ctx), params, ctx.cwd, root) }], details: undefined }
+          } catch {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'find_code failed' }) }], details: undefined }
+          }
+        },
+      })
+      findRegistered = true
+    }
     let browseRegistered = false
     const registerBrowse = (): void => {
       if (browseRegistered || !c.browse) return
@@ -417,6 +435,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
       const x = await ensureSession(ctx)
       registerAsk()
       registerBrowse()
+      registerFind()
       const key = keyOf(c, env)
       say(
         ctx,

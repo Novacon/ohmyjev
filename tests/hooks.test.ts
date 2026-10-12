@@ -688,3 +688,45 @@ test('skill picker leaves the listing alone with no key', { options: {} }, async
   on('prompt.attachment', ($, e) => ({ text: e.text }))
   expect((await $.prompt.attachment({ type: 'skill_listing', text: 'the listing', origin: { kind: 'engine' } } as never)).text).toBe('the listing')
 })
+
+const bigFile = Array.from({ length: 600 }, (_, i) => (i === 420 ? 'export function signup(req) {' : `const x${i} = ${i}`)).join('\n')
+const whereLine421 = (q: Record<string, unknown>) => {
+  const crit = (q.where as { criteria: Record<string, string> }).criteria
+  return { where: { type: 'choice' as const, choice: Object.keys(crit).find(k => crit[k]!.startsWith('lines 421-'))!, confidence: 0.88 } }
+}
+
+test('find_code returns the files that carry out the goal, with the line, or no match', async ($, on) => {
+  let p = 0.93
+  const fake = harness(on, q => ('where' in q ? whereLine421(q) : nouls({ match: p })))
+  fake.files['/repo/src/join.ts'] = bigFile
+  fake.files['/repo/src/util.ts'] = 'export const pad = 1'
+  const r = JSON.parse(String((await $.tool.call({ tool: 'mcp__ohmyjev__find_code', goal: 'where is the register flow' } as never)).result))
+  expect(r.files_scanned).toBe(2)
+  expect(r.matches.find((m: { path: string }) => m.path === '/repo/src/join.ts')).toMatchObject({ p: 0.93, verified: true, line: 421 })
+  p = 0.1
+  const none = JSON.parse(String((await $.tool.call({ tool: 'mcp__ohmyjev__find_code', goal: 'billing' } as never)).result))
+  expect(none.matches).toBe('no match')
+})
+
+test('ask_jev with a folder sweeps every file and returns the yes ones', async ($, on) => {
+  const fake = harness(on, q => ('where' in q ? whereLine421(q) : { answer: { type: 'noul', noul: 0.96 } }))
+  fake.files['/repo/src/db.ts'] = bigFile
+  const r = await $.tool.call({ tool: 'mcp__ohmyjev__ask_jev', question: 'does this concatenate SQL?', type: 'noul', folder: 'src' } as never)
+  const out = JSON.parse(String(r.result))
+  expect(out.files_asked).toBe(1)
+  expect(out.yes[0]).toMatchObject({ path: '/repo/src/db.ts', p: 0.96, line: 421 })
+})
+
+test('readNarrow turns a big Read into a window around the request, with a note', { options: { readNarrow: true } }, async ($, on) => {
+  const fake = harness(on, q => ('where' in q ? whereLine421(q) : nouls({ injection: 0 })))
+  fake.files['/repo/src/join.ts'] = bigFile
+  let got: Record<string, unknown> = {}
+  on('tool.call', ($, e) => { got = e as never; return { result: 'x', text: 'x' } })
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  await $.turn.start({ text: 'where does signup validate the email address', turnId: 't1' })
+  const r = await $.tool.call({ tool: 'Read', file_path: 'src/join.ts' })
+  expect(got).toMatchObject({ limit: 150 })
+  expect(r.context?.at(-1)).toContain('Narrowed this Read')
+  await $.tool.call({ tool: 'Read', file_path: 'src/join.ts', offset: 1, limit: 20 })
+  expect(got).toMatchObject({ offset: 1, limit: 20 }) // the agent's own window is left alone
+})

@@ -3,6 +3,7 @@
  * answers the engine. Every failure passes through; storage is fire-and-forget.
  */
 import type { EngineInterface, Register, SessionMessage, ToolCallResult } from 'claude-code'
+import { FIND_DESCRIPTION, FIND_SCHEMA, find, narrowNote, narrowRead, sweep, type CodeIO } from './code.ts'
 import { dashboardHtml } from './dashboard.ts'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from './jev.ts'
 import {
@@ -21,6 +22,7 @@ const WRITE_TOOLS = ['Write', 'Edit', 'NotebookEdit']
 const HOOKED = ['Bash', 'WebFetch', 'Read', 'Write', 'Edit', 'NotebookEdit', /^mcp__/] as const
 const ASK = 'mcp__ohmyjev__ask_jev'
 const BROWSE = 'mcp__ohmyjev__browse'
+const FIND = 'mcp__ohmyjev__find_code'
 const DOWN_MS = 5 * 60_000
 const CLIP = 16000
 
@@ -343,6 +345,21 @@ async function trimResult($: $, e: { tool: string }, r: ToolCallResult): Promise
   return { ...r, result: { ...res, stdout: out } as never, text: r.text?.includes(res.stdout) ? r.text.replace(res.stdout, out) : out }
 }
 
+// --- read narrowing (before the tool runs): a big Read cut to the part the request points at ---
+
+async function narrowCall($: $, e: Record<string, unknown>) {
+  if (e.offset !== undefined || e.limit !== undefined) return null
+  const path = pathOf(e)
+  const cwd = await $.session.cwd()
+  if (!path || !(await pathAllowed($, path, cwd, false))) return null
+  const abs = absolute(path, cwd, (await $.env.get('HOME')) ?? '')
+  const text = await $.fs.read(abs).catch(() => undefined)
+  if (typeof text !== 'string') return null
+  const n = await narrowRead(await codeIO($, String(e.tool)), userRequest, abs, text)
+  if (n) say($, `narrowed Read of ${path} to lines ${n.offset}-${n.offset + n.limit - 1}`)
+  return n && { path, n }
+}
+
 // --- stuck check (after the tool ran): the same approach failing over and over ---
 
 async function checkStuck($: $, e: { tool: string }, r: ToolCallResult): Promise<ToolCallResult> {
@@ -372,6 +389,7 @@ const ASK_SCHEMA = {
     type: { type: 'string', enum: ['noul', 'choice', 'score'], description: 'noul = probability of yes; choice = one of options; score = a position on options as levels, low to high' },
     options: { type: 'array', items: { type: 'string' }, description: 'choice labels, or 2-10 score levels from low to high' },
     files: { type: 'array', items: { type: 'string' }, description: 'Repo file paths whose contents Jev reads (not you)' },
+    folder: { type: 'string', description: 'With type noul: ask the question of every source file under this repo folder; returns only the files that answer yes, with the line' },
     state: { type: 'string', description: 'Any other text Jev should judge' },
   },
   required: ['question', 'type'],
@@ -379,10 +397,59 @@ const ASK_SCHEMA = {
 const ASK_FILE = 8000
 const ASK_TOTAL = 80000
 
+/** The code tools' I/O: repo files listed by git (else find), read through $.fs, every Jev call logged like a gate's. */
+async function codeIO($: $, tool: string): Promise<CodeIO> {
+  const cwd = await $.session.cwd()
+  const home = (await $.env.get('HOME')) ?? ''
+  return {
+    list: async dir => {
+      const abs = absolute(dir, cwd, home)
+      const git = await $.process.run(['git', '-C', abs, 'ls-files', '--cached', '--others', '--exclude-standard', '--full-name'], { timeoutMs: 10_000 }).catch(() => undefined)
+      const top = git?.exitCode === 0 ? await $.process.run(['git', '-C', abs, 'rev-parse', '--show-toplevel'], { timeoutMs: 5000 }).catch(() => undefined) : undefined
+      if (git?.exitCode === 0 && top?.exitCode === 0)
+        return git.stdout.split('\n').filter(Boolean).map(p => `${top.stdout.trim()}/${p}`).filter(p => p.startsWith(abs.replace(/\/$/, '') + '/'))
+      const found = await $.process.run(['find', abs, '-type', 'f'], { timeoutMs: 10_000 }).catch(() => undefined)
+      return found?.stdout.split('\n').filter(Boolean) ?? []
+    },
+    read: async p => {
+      const text = await $.fs.read(p).catch(() => undefined)
+      return typeof text === 'string' ? text : undefined
+    },
+    ask: async (state, questions) => {
+      const d = await decide($, 'ask_jev', tool, state, questions)
+      if (!d) return null
+      record($, d, null, 'code question')
+      return d.answers
+    },
+  }
+}
+
+/** find_code: files that carry out a described behaviour, inside the repo. */
+async function answerFind($: $, e: Record<string, unknown>): Promise<ToolCallResult> {
+  const reply = (v: unknown): ToolCallResult => ({ result: JSON.stringify(v) })
+  if (!c.findCode) return reply({ error: 'find_code is off: /omj config findCode on' })
+  const goal = typeof e.goal === 'string' ? e.goal.trim() : ''
+  if (!goal) return reply({ error: 'goal is required' })
+  const cwd = await $.session.cwd()
+  const dir = typeof e.path === 'string' && e.path.trim() ? e.path.trim() : (await $.session.root()) ?? cwd
+  if (!(await pathAllowed($, dir, cwd, false))) return reply({ error: `${dir} is outside the repo` })
+  const io = await codeIO($, FIND)
+  const r = await find(io, goal, await io.list(dir))
+  return reply(r.skipped ? { error: r.skipped } : { files_scanned: r.files, matches: r.hits.length ? r.hits : 'no match' })
+}
+
 async function answerAsk($: $, e: Record<string, unknown>): Promise<ToolCallResult> {
   const reply = (v: unknown): ToolCallResult => ({ result: JSON.stringify(v) })
   const q = buildQuestion(e)
   if (typeof q === 'string') return reply({ error: q })
+  if (typeof e.folder === 'string' && e.folder.trim()) {
+    if (e.type !== 'noul') return reply({ error: 'a folder sweep asks a yes/no question: use type noul' })
+    const cwd0 = await $.session.cwd()
+    if (!(await pathAllowed($, e.folder, cwd0, false))) return reply({ error: `${e.folder} is outside the repo` })
+    const io = await codeIO($, ASK)
+    const r = await sweep(io, String(e.question), await io.list(e.folder))
+    return reply(r.skipped ? { error: r.skipped } : { files_asked: r.files, yes: r.yes.length ? r.yes : 'none' })
+  }
   const cwd = await $.session.cwd()
   const home = (await $.env.get('HOME')) ?? ''
   const files: Record<string, string> = {}
@@ -544,6 +611,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
     if (c.browse) await $.tool.register({ name: 'browse', description: BROWSE_DESCRIPTION, inputSchema: BROWSE_SCHEMA }).catch(() => undefined)
+    if (c.findCode) await $.tool.register({ name: 'find_code', description: FIND_DESCRIPTION, inputSchema: FIND_SCHEMA }).catch(() => undefined)
     for (const name of ['omj', 'ohmyjev'])
       await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", argumentHint: '[stats|config [name value]|on|off]' }).catch(() => undefined)
     const k = await keyOf($, c)
@@ -604,6 +672,14 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
     if (e.tool === ASK) return answerAsk($, e as Record<string, unknown>)
+    if (e.tool === FIND) return answerFind($, e as Record<string, unknown>)
+    if (c.enabled && c.readNarrow && kindOf(String(e.tool)) === 'Read') {
+      const narrowed = await narrowCall($, e as Record<string, unknown>)
+      if (narrowed) {
+        const r = await screenResult($, e, await next({ ...e, offset: narrowed.n.offset, limit: narrowed.n.limit } as typeof e))
+        return { ...r, context: [...(r.context ?? []), narrowNote(narrowed.path, narrowed.n)] }
+      }
+    }
     if (e.tool === BROWSE) {
       const denied = c.enabled && c.browse ? await gate($, e) : undefined // the exfil gate: a goal that carries local data out
       if (denied) return { deny: denied }

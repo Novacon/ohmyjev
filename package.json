@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "description": "Guardrails for coding agents, decided by TypeSafe's Jev: blocks destructive commands, catches prompt injection, pushes back on an unverified done and routes effort per turn. For Claude Code, pi and omp.",
   "type": "module",
   "license": "MIT",
@@ -29,6 +29,7 @@
   ],
   "files": [
     "adapters/*.ts",
+    "hooks/code.ts",
     "hooks/dashboard.ts",
     "hooks/jev.ts",
     "hooks/policy.ts",
@@ -200,6 +201,16 @@
         "type": "boolean",
         "description": "Expose the ask_jev tool for quick judgments about repo files or text",
         "default": true
+      },
+      "findCode": {
+        "type": "boolean",
+        "description": "Expose a find_code tool: Jev finds the files that carry out a described behaviour",
+        "default": true
+      },
+      "readNarrow": {
+        "type": "boolean",
+        "description": "Claude Code only: a Read of a 400+ line file comes back as the fifth the request needs",
+        "default": false
       },
       "browse": {
         "type": "boolean",

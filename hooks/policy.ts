@@ -38,6 +38,8 @@ export const DEFAULTS = {
   approveRiskMax: 0.2,
   askJev: true,
   browse: false,
+  findCode: true,
+  readNarrow: false,
   autoCompact: true,
   compactSwitched: 0.8,
   compactBoundary: 0.6,

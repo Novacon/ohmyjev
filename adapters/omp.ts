@@ -10,7 +10,7 @@ import {
   type Config, type Route,
 } from '../hooks/policy.ts'
 import {
-  ASK_DESCRIPTION, Session, answerAsk, newStuck, runBrowse, stuckNote, trimOutput, keyOf, pathAllowed, repoRoot,
+  ASK_DESCRIPTION, FIND_DESCRIPTION, Session, answerAsk, answerFind, newStuck, runBrowse, stuckNote, trimOutput, keyOf, pathAllowed, repoRoot,
   type Env, type Fetch,
 } from './shared.ts'
 
@@ -233,6 +233,7 @@ function askSchema(pi: OmpApi): unknown {
     }),
     options: optionalStrings('Choice labels, or 2-10 score levels from low to high'),
     files: optionalStrings('Repo file paths whose contents Jev reads'),
+    folder: t.Optional(t.String({ description: 'With type noul: ask every source file under this repo folder; returns the yes files' })),
     state: t.Optional(t.String({ description: 'Any other text Jev should judge' })),
   })
 }
@@ -256,6 +257,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
     let classifiedPrompt: string | undefined
     let askRegistered = false
     let browseRegistered = false
+    let findRegistered = false
     let sessionGeneration = 0
     let userEffort: string | undefined
     const routedThinkingEntries = new Set<string>()
@@ -427,6 +429,29 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
           },
         })
         askRegistered = true
+      }
+      if (c.findCode && !findRegistered) {
+        const t = pi.typebox.Type
+        pi.registerTool({
+          name: 'find_code',
+          label: 'Find code',
+          description: FIND_DESCRIPTION,
+          parameters: t.Object({
+            goal: t.String({ description: 'What the code does, in plain words' }),
+            path: t.Optional(t.String({ description: 'Folder to search, inside the repo; default the repo root' })),
+          }),
+          approval: 'read',
+          async execute(_id, params, _signal, _update, toolCtx) {
+            try {
+              touch(toolCtx)
+              if (!session) return { content: [{ type: 'text', text: JSON.stringify({ error: 'jev session unavailable' }) }] }
+              return { content: [{ type: 'text', text: await answerFind(session, params, toolCtx.cwd, root || await repoRoot(toolCtx.cwd)) }], details: {} }
+            } catch {
+              return { content: [{ type: 'text', text: JSON.stringify({ error: 'find_code failed' }) }], details: {} }
+            }
+          },
+        })
+        findRegistered = true
       }
       if (c.browse && !browseRegistered) {
         const t = pi.typebox.Type

@@ -66,6 +66,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Auto-approve** | Where Claude Code or Codex would stop to ask you, a command Jev is sure only reads or can be undone, or an edit inside the repo with no credential in it, runs without the prompt. Plain reads like `ls`, `git status` and `grep` are cleared by code, with no Jev call at all. Off whenever you've set `policies`. |
 | **Trim long output** | A shell output over 12000 characters is split into parts, and one Jev call rates which parts your request needs: the error, the failing test, the value you asked for. The rest becomes one line saying how much was left out. A 20000-character test log came back as 4600 with the one failure in it. |
 | **Skill picker** | Claude Code sends the model a line for every skill you have on every prompt. ohmyjev leaves that list out and asks Jev whether a prompt needs a skill and which one, then names it beside your prompt. A second check makes sure the pick does the job, so a prompt no skill fits gets none. |
+| **Narrow big reads** | Off by default. A Claude Code `Read` of a 400+ line file comes back as the fifth Jev rates your request needs, with a note on how to read the rest. Saves tokens, adds about a second per big read. |
 | **Stuck check** | After the third failed tool call in a request, Jev reads the failures. If they repeat one approach and fail the same way, the agent is told to stop, read the error and try something else, or ask you. |
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
@@ -87,6 +88,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | Feature | What it does |
 |---|---|
 | **`ask_jev`** | A tool the model can use to ask Jev about repo files or text without loading them into its own context. |
+| **`find_code`** | Finds code by describing it, even when the code names it differently. Jev screens every source file from its declarations, re-checks the best in full, and returns the files with the line. "No match" is a real answer. |
 | **`browse`** | A tool that does a web task in a headless browser, with Jev picking each click and field: a Google Flights search in about 6 seconds. Off until you turn on `browse`. |
 | **`/omj`** | This session's Jev calls, errors, cost, median latency and denies, and where the key comes from. It never prints the key. `/omj config` lists and changes settings. `/omj stats` opens a dashboard of every session in your browser. `/omj off` and `/omj on` switch ohmyjev for the session. `/ohmyjev` is the same command. |
 
@@ -294,6 +296,15 @@ The model can call this tool on its own when it needs a judgment about files wit
 Jev reads the files, not the model. ohmyjev only sends files that are inside the repo, up to 8000 characters each and
 80000 in total.
 
+### `find_code` and folder sweeps
+
+`find_code` finds code by what it does. On this repo, "the code that stops the agent from writing outside the project"
+came back as `hooks/ohmyjev.ts:281`, the write gate's path check, though the code never says "outside the project".
+"stripe billing webhook" came back as no match, which is right.
+
+`ask_jev` takes a `folder` with a yes/no question and asks it of every source file there, returning only the yes
+files with the line. Both read the files for the model, so none of it lands in context.
+
 ### `browse`
 
 Turn it on with `/omj config browse on`, or `browse` in the settings. The model then has a `browse` tool for tasks on a
@@ -398,6 +409,8 @@ one for the session. To keep a change, run `/plugin configure ohmyjev@ohmyjev` i
 | `autoCompact` | on | Compacts when the task changes. `compactMinPercent` (40) sets how full the context has to be first. |
 | `askJev` | on | Gives the model the `ask_jev` tool. |
 | `browse` | off | Gives the model the `browse` tool. Needs uv and a Chromium-based browser. |
+| `findCode` | on | Gives the model the `find_code` tool. |
+| `readNarrow` | off | Claude Code: cuts a big `Read` to the part the request needs. |
 | `autoApprove` | on | Skips the permission prompt for a call Jev is sure is safe. `approveConfidence` (0.9) and `approveRiskMax` (0.2) set how sure. |
 | `trimOutput` | on | Cuts long shell output to what the request needs. `trimOver` (12000 characters) and `trimKeep` (0.3) tune it. |
 | `stuckCheck` | on | Tells the agent to change course when its failures repeat. `stuck` (0.7) sets how sure Jev must be. |
@@ -494,4 +507,5 @@ The design and plans are in [`docs/superpowers`](docs/superpowers).
 ## Credits
 
 The question rubrics come from [disler/ten-levels-of-jev](https://github.com/disler/ten-levels-of-jev). `browse` runs
-[browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast). Both MIT.
+[browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast). `find_code`, the `ask_jev` folder sweep and read
+narrowing are ported from [BorisLeMeec/jev](https://github.com/BorisLeMeec/jev), keeping its measured gates. All MIT.

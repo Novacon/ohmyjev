@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "description": "Jev for Claude Code: Bash and Write gates, an injection screen, and a done-check, decided by TypeSafe's Jev.",
   "author": {
     "name": "lordknows13"
@@ -199,6 +199,18 @@
       "title": "ask_jev tool",
       "description": "Give the model an ask_jev tool for quick judgments about repo files or text without reading them into context",
       "default": true
+    },
+    "findCode": {
+      "type": "boolean",
+      "title": "find_code tool",
+      "description": "Give the model a find_code tool: Jev finds the files that carry out a described behaviour, even when the code names it differently",
+      "default": true
+    },
+    "readNarrow": {
+      "type": "boolean",
+      "title": "Narrow big reads",
+      "description": "A Read of a 400+ line file comes back as the fifth Jev rates the request needs, with a note on how to read the rest. Saves tokens, adds about a second per big read",
+      "default": false
     },
     "browse": {
       "type": "boolean",

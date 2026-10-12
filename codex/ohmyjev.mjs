@@ -35,6 +35,8 @@ var DEFAULTS = {
   approveRiskMax: 0.2,
   askJev: true,
   browse: false,
+  findCode: true,
+  readNarrow: false,
   autoCompact: true,
   compactSwitched: 0.8,
   compactBoundary: 0.6,
@@ -464,6 +466,15 @@ function trimmed(chunks, a, c) {
 // adapters/shared.ts
 import { execFile } from "node:child_process";
 import { appendFile, chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+
+// hooks/code.ts
+var LOCATE = "Which numbered chunk of `file.chunks` contains the part of this file that most directly implements " + "what `goal` describes? Each chunk is a run of consecutive lines from the file at `file.path`.";
+var ASK = "Answer `question` about the source file at `file.path`, using only the code in `file.content`. Answer yes only " + "if the code itself shows it; do not assume behaviour that is not visible here.";
+var SCREEN = "Is the file at `file.path` one of the places where what `goal` describes is actually carried out? Judge " + "only from `file.skeleton`, a reduction of the file to its declarations, by what this file's own code does, not by " + "whether it uses the same words as `goal`. The codebase may name the concept differently, in another natural " + "language, or with an internal term.";
+var VERIFY = SCREEN.replace("only from `file.skeleton`, a reduction of the file to its declarations,", "from `file.content`, the file's full source,");
+var PERFORMS = "This file's own code performs it: it defines the handler, endpoint, form, screen, query or logic that carries " + "it out. Removing this file would break it.";
+var SUPPORTS = "Everything else, including files that only support it (shared components, styling, helpers, configuration, " + "dependency manifests) and files that merely call it or link to it.";
+var FIND_DESCRIPTION = 'Find code by describing what it does, even when the codebase names it differently ("where is the register flow" ' + "finds a signup handler). Jev reads the files, not you: it screens every source file, re-checks the best in full and " + 'returns the files that carry it out, with the line. "No match" is a real answer. Use it before grepping for a concept.';
 
 // hooks/dashboard.ts
 var SITE = "https://ohmyjev.xyz";

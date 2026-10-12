@@ -5,6 +5,7 @@
  */
 import { execFile } from 'node:child_process'
 import { appendFile, chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
+import { find, sweep, type CodeIO } from '../hooks/code.ts'
 import { dashboardHtml } from '../hooks/dashboard.ts'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from '../hooks/jev.ts'
 import {
@@ -259,6 +260,7 @@ export const ASK_SCHEMA = {
     type: { type: 'string', enum: ['noul', 'choice', 'score'], description: 'noul = probability of yes; choice = one of options; score = a position on options as levels, low to high' },
     options: { type: 'array', items: { type: 'string' }, description: 'choice labels, or 2-10 score levels from low to high' },
     files: { type: 'array', items: { type: 'string' }, description: 'Repo file paths whose contents Jev reads (not you)' },
+    folder: { type: 'string', description: 'With type noul: ask the question of every source file under this repo folder; returns only the files that answer yes, with the line' },
     state: { type: 'string', description: 'Any other text Jev should judge' },
   },
   required: ['question', 'type'],
@@ -270,6 +272,13 @@ const ASK_TOTAL = 80000
 export async function answerAsk(x: Session, input: Record<string, unknown>, cwd: string, root: string): Promise<string> {
   const q = buildQuestion(input)
   if (typeof q === 'string') return JSON.stringify({ error: q })
+  if (typeof input.folder === 'string' && input.folder.trim()) {
+    if (input.type !== 'noul') return JSON.stringify({ error: 'a folder sweep asks a yes/no question: use type noul' })
+    if (!(await pathAllowed(input.folder, cwd, root, x.c, x.env, false))) return JSON.stringify({ error: `${input.folder} is outside the repo` })
+    const io = codeIO(x, cwd, 'ask_jev')
+    const r = await sweep(io, String(input.question), await io.list(input.folder))
+    return JSON.stringify(r.skipped ? { error: r.skipped } : { files_asked: r.files, yes: r.yes.length ? r.yes : 'none' })
+  }
   const home = x.env.HOME ?? ''
   const files: Record<string, string> = {}
   let budget = ASK_TOTAL
@@ -366,4 +375,45 @@ export async function trimOutput(x: Session, request: string, output: string): P
   const out = trimmed(chunks, d.answers, x.c)
   x.record(d, null, out ? `trimmed ${output.length} to ${out.length} characters` : 'kept whole')
   return out
+}
+
+// --- code tools: find_code and the ask_jev folder sweep ---
+
+/** Repo files listed by git (else find), read from disk, every Jev call logged like a gate's. */
+export function codeIO(x: Session, cwd: string, tool: string): CodeIO {
+  const run = (argv: string[]) => {
+    const { promise, resolve } = Promise.withResolvers<string | null>()
+    execFile(argv[0]!, argv.slice(1), { cwd, timeout: 10_000, maxBuffer: 16 << 20 }, (err, out) => resolve(err ? null : String(out)))
+    return promise
+  }
+  return {
+    list: async dir => {
+      const abs = absolute(dir, cwd, x.env.HOME ?? '')
+      const top = (await run(['git', '-C', abs, 'rev-parse', '--show-toplevel']))?.trim()
+      const files = top ? await run(['git', '-C', abs, 'ls-files', '--cached', '--others', '--exclude-standard', '--full-name']) : null
+      if (top && files !== null) return files.split('\n').filter(Boolean).map(p => `${top}/${p}`).filter(p => p.startsWith(abs.replace(/\/$/, '') + '/'))
+      return (await run(['find', abs, '-type', 'f']))?.split('\n').filter(Boolean) ?? []
+    },
+    read: p => readFile(p, 'utf8').catch(() => undefined),
+    ask: async (state, questions) => {
+      const d = await x.decide('ask_jev', tool, state, questions)
+      if (!d) return null
+      x.record(d, null, 'code question')
+      return d.answers
+    },
+  }
+}
+
+export { FIND_DESCRIPTION, FIND_SCHEMA } from '../hooks/code.ts'
+
+/** find_code's answer as JSON text: the files that carry out the goal, inside the repo. */
+export async function answerFind(x: Session, input: Record<string, unknown>, cwd: string, root: string): Promise<string> {
+  if (!x.c.findCode) return JSON.stringify({ error: 'find_code is off: /omj config findCode on' })
+  const goal = typeof input.goal === 'string' ? input.goal.trim() : ''
+  if (!goal) return JSON.stringify({ error: 'goal is required' })
+  const dir = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : root || cwd
+  if (!(await pathAllowed(dir, cwd, root, x.c, x.env, false))) return JSON.stringify({ error: `${dir} is outside the repo` })
+  const io = codeIO(x, cwd, 'find_code')
+  const r = await find(io, goal, await io.list(dir))
+  return JSON.stringify(r.skipped ? { error: r.skipped } : { files_scanned: r.files, matches: r.hits.length ? r.hits : 'no match' })
 }
