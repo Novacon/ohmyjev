@@ -20,7 +20,7 @@
   <section id="top" class="slide landing" data-title="Quick start" aria-label="ohmyjev quick start">
     <div class="quick">
       <h1><a href="https://typesafe.ai">Jev</a>, batteries included, for Claude Code, Codex, pi and omp.</h1>
-      <p class="tagline">One install that makes your coding agent faster and safer: no permission prompts for safe commands, long output cut to what matters, the right skill loaded, and nothing irreversible until you say yes.</p>
+      <p class="tagline">Your coding agent, faster and safer. Safe commands skip the prompt, long output gets cut down, and nothing irreversible runs until you say yes.</p>
       <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>Codex · pi · omp</span><span>Decided by Jev, ~200 ms</span><span>MIT license</span></p>
       <div class="qs">
         <div class="qs-head lbl"><span>Quick start</span><span class="qs-tabs" role="tablist" aria-label="Agent"><button type="button" class="qs-tab" role="tab" data-agent="claude" aria-selected="true">Claude Code</button><button type="button" class="qs-tab" role="tab" data-agent="codex" aria-selected="false">Codex</button><button type="button" class="qs-tab" role="tab" data-agent="omp" aria-selected="false">omp</button><button type="button" class="qs-tab" role="tab" data-agent="pi" aria-selected="false">pi</button></span></div>
@@ -53,26 +53,26 @@
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">01 / Same task, faster <span>Google Flights · Zurich to London</span></p><h2>same task, <em>faster</em></h2>
-        <p class="lede">One flight search, Zurich to London, run three ways. The bars fill at real relative speed: the router picks a faster model, and <code>browse</code> lets Jev drive the browser itself.<sup><a href="#m1" aria-label="How we measured">1</a></sup></p>
+        <p class="lede">One flight search, three ways. The bars fill at real speed.<sup><a href="#m1" aria-label="How we measured">1</a></sup></p>
       </div>
       <div class="body reveal">
         <div class="grid race-lanes">
           <div class="lane" data-s="108">
-            <div class="lane-name">Claude Code as it ships<small>Opus 5.5 at xhigh drives a browser through Playwright</small></div>
+            <div class="lane-name">Claude Code today<small>Opus drives the browser</small></div>
             <div class="lane-time"><b>0 s</b><small>$0.23 to $0.42</small></div>
             <div class="track"><i></i></div>
           </div>
           <div class="lane" data-s="44">
-            <div class="lane-name">With ohmyjev's router<small>Jev hands the task to Haiku, which drives Playwright</small></div>
+            <div class="lane-name">With the router<small>Jev hands it to Haiku</small></div>
             <div class="lane-time"><b>0 s</b><small>about $0.01</small></div>
             <div class="track"><i></i></div>
           </div>
           <div class="lane win" data-s="9.9">
-            <div class="lane-name"><code>browse</code>, Jev picks every click<small>ohmyjev's browse tool on its own, called directly</small></div>
+            <div class="lane-name">With <code>browse</code><small>browse tool, called directly</small></div>
             <div class="lane-time"><b>0 s</b><small>about $0.001</small></div>
             <div class="track"><i></i></div>
           </div>
-          <div class="race-foot"><p>Median of three runs each, all reaching the flight results. About 10× faster, a few hundred times cheaper.</p><button type="button" class="replay lbl">Replay <span aria-hidden="true">↻</span></button></div>
+          <div class="race-foot"><p>Median of 3 runs each. About 10× faster.</p><button type="button" class="replay lbl">Replay <span aria-hidden="true">↻</span></button></div>
         </div>
       </div>
     </div>
@@ -81,15 +81,15 @@
   <section id="proof" class="slide doc" data-title="Measured">
     <div class="doc-inner">
       <div class="head reveal">
-        <p class="section-label lbl">02 / Measured <span>every number has a footnote</span></p><h2>measured, not <em>promised</em></h2>
-        <p class="lede">Jev answers typed questions with probabilities, fast and cheap enough to ask about every step your agent takes. Here's what that buys, from real runs on a real machine.</p>
+        <p class="section-label lbl">02 / Measured <span>footnotes at the bottom</span></p><h2>measured, not <em>promised</em></h2>
+        <p class="lede">Jev is fast and cheap enough to check every step. Here's what that gets you, from real runs.</p>
       </div>
       <div class="body reveal">
         <div class="grid g4">
-          <div class="claim"><b>3 in 4</b><h3>shell commands run without a permission prompt</h3><p>Where Claude Code or Codex would ask, a command Jev is sure is safe just runs. <code>ls</code> and <code>git status</code> don't even need Jev.</p><p class="how">637 of 865 real commands<sup><a href="#m2">2</a></sup></p></div>
-          <div class="claim"><b>163 ms</b><h3>and $0.00003 per Jev check</h3><p>Cheap and quick enough to ask about every step: judgment everywhere instead of the big model second-guessing itself.</p><p class="how">3,877 real calls<sup><a href="#m3">3</a></sup></p></div>
-          <div class="claim"><b>4,600</b><h3>characters left of a 20,000-character test log</h3><p>Jev rates which parts of a long output your request needs. The failing test stays, the passing lines go.</p><p class="how">one Jev call, 281 ms<sup><a href="#m4">4</a></sup></p></div>
-          <div class="claim"><b>28 / 28</b><h3>right on the live safety test</h3><p>Wipes, force pushes, an encoded <code>rm</code> and <code>curl</code> uploading keys are stopped. Deleting lines, pushing and uninstalling are not.</p><p class="how">three runs, 28 of 28 each<sup><a href="#m5">5</a></sup></p></div>
+          <div class="claim"><b>3 in 4</b><h3>shell commands run without a permission prompt</h3><p>If Jev is sure it's safe, it just runs. <code>ls</code> and <code>git status</code> skip Jev entirely.</p><p class="how">637 of 865 real commands<sup><a href="#m2">2</a></sup></p></div>
+          <div class="claim"><b>163 ms</b><h3>and $0.00003 per Jev check</h3><p>Cheap enough to ask about every single step.</p><p class="how">3,877 real calls<sup><a href="#m3">3</a></sup></p></div>
+          <div class="claim"><b>4,600</b><h3>characters left of a 20,000-character test log</h3><p>The failing test stays. The 400 passing lines go.</p><p class="how">one Jev call, 281 ms<sup><a href="#m4">4</a></sup></p></div>
+          <div class="claim"><b>28 / 28</b><h3>right on the live safety test</h3><p>Wipes and key uploads get stopped. Normal edits and pushes don't.</p><p class="how">three runs, 28 of 28 each<sup><a href="#m5">5</a></sup></p></div>
         </div>
       </div>
     </div>
@@ -99,7 +99,7 @@
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">03 / See it work <span>Claude Code, replayed</span></p><h2>see it <em>work</em></h2>
-        <p class="lede">What ohmyjev looks like from inside a Claude Code session. Most turns it stays out of sight; these are the moments it steps in.</p>
+        <p class="lede">Most turns you won't notice it. These are the ones you will.</p>
       </div>
       <div class="body reveal">
         <div class="demo-cols">
@@ -110,14 +110,14 @@
             <div class="term-status" id="term-status"></div>
           </div>
           <div class="scenes" role="tablist" aria-label="Moments">
-            <button type="button" class="scene" role="tab" aria-selected="true"><span class="st">No prompts, less noise</span><span class="sd">The test run is approved and its log trimmed to the failure.</span></button>
-            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">browse</span><span class="sd">A flight search in one call, Jev clicking through it.</span></button>
-            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Destructive command</span><span class="sd">A wipe that can't be undone is denied, with the reason.</span></button>
-            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">You say yes</span><span class="sd">Blocked, the agent asks. Answer yes and that exact command runs.</span></button>
-            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Prompt injection</span><span class="sd">A fetched page that gives orders gets a "treat as data" note.</span></button>
-            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Stuck</span><span class="sd">Three failures of one approach, and the agent is told to stop.</span></button>
-            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Unverified done</span><span class="sd">"Fixed" with no check run? The stop is pushed back once.</span></button>
-            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Skill picker</span><span class="sd">No skill list in the prompt; Jev names the one skill this needs.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="true"><span class="st">No prompts, less noise</span><span class="sd">Tests run with no prompt, log cut to the failure.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">browse</span><span class="sd">A flight search in one call.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Destructive command</span><span class="sd">A wipe gets blocked, with the reason.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">You say yes</span><span class="sd">Say yes and the blocked command runs.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Prompt injection</span><span class="sd">A page giving orders gets flagged.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Stuck</span><span class="sd">Same fail three times, agent told to switch.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Unverified done</span><span class="sd">"Fixed" with no test run gets pushed back.</span></button>
+            <button type="button" class="scene" role="tab" aria-selected="false"><span class="st">Skill picker</span><span class="sd">Jev loads the one skill you need.</span></button>
           </div>
         </div>
       </div>
@@ -127,8 +127,8 @@
   <section id="yes" class="slide doc" data-title="Say yes">
     <div class="doc-inner">
       <div class="head reveal">
-        <p class="section-label lbl">04 / Say yes <span>bypass mode, kept safe</span></p><h2>nothing irreversible until you <em>say yes</em></h2>
-        <p class="lede">Bypass mode is fast because nothing stops the agent. ohmyjev keeps it that way and stops only what can't be undone. It never adds a prompt: when it blocks, the agent tells you why and asks.</p>
+        <p class="section-label lbl">04 / Say yes <span>bypass mode, still safe</span></p><h2>nothing irreversible until you <em>say yes</em></h2>
+        <p class="lede">Keep bypass mode. ohmyjev only stops what can't be undone, and never adds a prompt.</p>
       </div>
       <div class="body reveal">
         <div class="flow-cols">
@@ -137,15 +137,15 @@
               <ul class="ticks">
                 <li><code>rm -rf</code>, force pushes, <code>reset --hard</code>, dropped tables</li>
                 <li><code>curl</code> or <code>scp</code> sending your keys or files out</li>
-                <li>Writes outside the repo, and credentials written into it</li>
-                <li>Pages and files that try to give your agent orders</li>
+                <li>Writes outside the repo, or with keys in them</li>
+                <li>Pages that try to give your agent orders</li>
               </ul>
             </div>
             <div><h3>Not stopped</h3>
               <ul class="ticks">
-                <li>Deleting lines, dropping a co-author trailer, uninstalling</li>
-                <li>Ordinary commits and pushes, installs, builds, tests</li>
-                <li>Anything you asked for by name, or said yes to after a block</li>
+                <li>Deleting lines, uninstalling, removing a co-author</li>
+                <li>Commits, pushes, installs, builds, tests</li>
+                <li>Anything you asked for, or said yes to</li>
               </ul>
             </div>
           </div>
@@ -159,7 +159,7 @@ Tell the user what was blocked and why, and ask whether to run it anyway. If the
   <span class="c">⎿  (no output)</span></pre></div>
             <div class="callout">
               <h3>Fails open</h3>
-              <p>A middling answer, a slow or down Jev, a missing key or any error inside ohmyjev falls through to the normal flow. Keep your deny rules in <code>settings.json</code> too.</p>
+              <p>If Jev is unsure, slow or down, the call goes through like normal. Keep your own deny rules too.</p>
             </div>
           </div>
         </div>
@@ -171,28 +171,28 @@ Tell the user what was blocked and why, and ask whether to run it anyway. If the
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">05 / Install <span>Claude Code · Codex · omp · pi</span></p><h2><em>install</em> it</h2>
-        <p class="lede">You need a <a href="https://typesafe.ai">TypeSafe</a> key, or an OpenRouter key. Everything is on by default except <code>browse</code>: turn it on with <code>/omj config browse on</code>. Every feature and setting is on the <a href="features.html">features page</a>.</p>
+        <p class="lede">You need a <a href="https://typesafe.ai">TypeSafe</a> or OpenRouter key. Everything is on except <code>browse</code>. See <a href="features.html">every feature</a>.</p>
       </div>
       <div class="body reveal main-first">
         <div class="grid g4">
-          <div class="step"><p class="n">CLAUDE CODE</p><h3>One command</h3><p>2.1.287 or later. Hooks run right away.</p>
+          <div class="step"><p class="n">CLAUDE CODE</p><h3>One command</h3><p>Version 2.1.287 or later.</p>
             <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>claude code</span><button type="button" class="copy" data-copy>Copy <span aria-hidden="true">→</span></button></div><pre>/plugin install ohmyjev <span class="nw">--marketplace</span> Novacon/ohmyjev</pre></div></div>
-          <div class="step"><p class="n">CODEX</p><h3>Plugin, then trust</h3><p>Trust its hooks once in <code>/hooks</code>. Needs Node.</p>
+          <div class="step"><p class="n">CODEX</p><h3>Plugin and trust</h3><p>Then trust it in <code>/hooks</code>.</p>
             <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>shell</span><button type="button" class="copy" data-copy>Copy <span aria-hidden="true">→</span></button></div><pre>codex plugin marketplace add Novacon/ohmyjev
 codex plugin add ohmyjev@ohmyjev</pre></div></div>
-          <div class="step"><p class="n">OMP</p><h3>From npm</h3><p>Restart the session after installing.</p>
+          <div class="step"><p class="n">OMP</p><h3>From npm</h3><p>Restart after installing.</p>
             <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>shell</span><button type="button" class="copy" data-copy>Copy <span aria-hidden="true">→</span></button></div><pre>omp plugin install ohmyjev</pre></div></div>
-          <div class="step"><p class="n">PI</p><h3>From npm</h3><p>Settings go under <code>ohmyjev</code> in pi's settings file.</p>
+          <div class="step"><p class="n">PI</p><h3>From npm</h3><p>Restart after installing.</p>
             <div class="code"><div class="code-bar lbl"><span class="dots" aria-hidden="true">● ● ●</span><span>shell</span><button type="button" class="copy" data-copy>Copy <span aria-hidden="true">→</span></button></div><pre>pi install npm:ohmyjev</pre></div></div>
         </div>
         <div class="grid">
           <div class="method"><h3>How we measured</h3>
             <ol>
-              <li id="m1">Google Flights, one-way Zurich to London on Nov 20, 2026, in <code>claude -p</code> on an Apple silicon Mac, three runs each, all reaching the results. Medians: 108 s for Claude Code as shipped (runs of 108, 339 and 31 s) and 44 s with the router picking Haiku (<code>routeMainModel</code> on), both end to end in Claude Code; 9.9 s for <code>browse</code> called directly (runs of 10.5, 7.4 and 9.9 s). Inside Claude Code, router and <code>browse</code> together took 18 s, the extra being Claude Code starting and Haiku's two turns. Times include startup.</li>
-              <li id="m2">Every Jev-judged shell command in the author's logs: 637 of 865 clear auto-approve's bar (not irreversible at 0.9 confidence, under 0.2 for wiping or sending data out). Separately, 31% of 4,888 real commands are plain reads that skip Jev.</li>
-              <li id="m3">All Jev calls in those logs: $0.13 for 3,877 calls over 90 sessions, median 163 ms, 95th percentile 239 ms.</li>
-              <li id="m4">A 420-line test log with one failure: 20,471 characters in, 4,582 out, the failure kept.</li>
-              <li id="m5"><code>tests/live.ts</code>: 28 real commands with expected verdicts, against the live Jev.</li>
+              <li id="m1">One-way Zurich to London on Google Flights, 3 runs each on an M-series Mac, all correct. Claude Code as shipped: 108 s (108, 339, 31). Router on: 44 s. <code>browse</code> called directly: 9.9 s. Inside Claude Code, router plus <code>browse</code> took 18 s.</li>
+              <li id="m2">637 of 865 real shell commands cleared auto-approve. 31% of 4,888 commands were plain reads that skip Jev.</li>
+              <li id="m3">3,877 real Jev calls over 90 sessions cost $0.13. Median 163 ms.</li>
+              <li id="m4">A 420-line test log with one failure. 20,471 characters in, 4,582 out.</li>
+              <li id="m5">28 real commands in <code>tests/live.ts</code>, against the live Jev.</li>
             </ol>
             <div class="links lbl"><a href="features.html">Every feature <span aria-hidden="true">→</span></a><a href="https://github.com/Novacon/ohmyjev">GitHub <span aria-hidden="true">↗</span></a><a href="https://typesafe.ai">typesafe.ai <span aria-hidden="true">↗</span></a></div>
           </div>
