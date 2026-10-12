@@ -1,3 +1,4 @@
+import { asSummary, judgeable, select } from '../hooks/compact.ts'
 import { readFile } from 'node:fs/promises'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
@@ -599,6 +600,34 @@ export function createExtension(options: PiAdapterOptions = {}) {
         entries: [...event.entries, { type: 'custom_message', customType: 'ohmyjev', content: block, display: true }],
         continue: true,
       }
+    }))
+
+    // fast compaction: Jev keeps the messages that still matter, verbatim; pi's own summary runs on any failure
+    pi.on('session_before_compact', guarded<HostEvent, { compaction: Record<string, unknown> }>(async (event, ctx) => {
+      latestCtx = ctx
+      if (!c.enabled || !c.fastCompact || !keyOf(c, env)) return
+      const prep = entry(entry(event).preparation)
+      const msgs = [...(Array.isArray(prep.messagesToSummarize) ? prep.messagesToSummarize : []), ...(Array.isArray(prep.turnPrefixMessages) ? prep.turnPrefixMessages : [])]
+      const blocks = msgs.map(m => {
+        const e = entry(m)
+        const tools = Array.isArray(e.content) ? e.content.flatMap(p => entry(p).type === 'toolCall' ? [`[tool_use ${String(entry(p).name)}] ${json(entry(p).arguments).slice(0, 400)}`] : []) : []
+        const role = e.role === 'toolResult' ? 'user' : String(e.role ?? 'assistant')
+        const text = [e.role === 'toolResult' ? `[tool_result] ${textOf(e.content).slice(0, 800)}` : textOf(e.content), ...tools].filter(Boolean).join('\n').trim()
+        return { role, text }
+      }).filter(b => judgeable(b.role, b.text))
+      const x = await ensureSession(ctx)
+      const directive = [typeof entry(event).customInstructions === 'string' ? entry(event).customInstructions as string : '', userRequest].filter(Boolean).join('\n')
+      const started = Date.now()
+      const kept = await select(async (state, questions) => {
+        const d = await x.decide('session.compact', 'compact', state, questions)
+        if (!d) return null
+        x.record(d, null, 'compaction checks')
+        return d.answers
+      }, blocks, directive)
+      if (!kept) return
+      const summary = asSummary(kept, blocks)
+      say(ctx, `fast compaction: kept ${kept.length} of ${blocks.length} messages verbatim, ${Date.now() - started} ms`)
+      return { compaction: { summary, firstKeptEntryId: prep.firstKeptEntryId, tokensBefore: prep.tokensBefore, estimatedTokensAfter: Math.ceil(summary.length / 4) } }
     }))
 
     pi.on('agent_settled', guarded(async (_event, ctx) => {

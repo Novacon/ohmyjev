@@ -1,8 +1,9 @@
+import { broken, filesHash, parseRules, rewriteReason, ruleQuestions } from '../hooks/prose.ts'
 import { expect, test } from 'claude-code/testing'
 import {
   DEFAULTS as c, DONE_REASON, EMPTY_SESSION, absolute, clip, expandRoot, gateBash, gateWrite, isUnder, judgeStop,
   rawAbsolute, sanitizeSid, screen, statusText, type Answers, parseWorktrees, pathDenyText, toggleArg,
-  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, configCommand, browseCommand, browseReply, stuckDue, judgeStuck, trimChunks, trimRequest, trimmed, pickSkill, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
+  BASH_Q, buildQuestion, summarize, isPlainRead, plainRead, configCommand, browseCommand, browseReply, stuckDue, judgeStuck, trimChunks, trimRequest, trimmed, pickSkill, maskText, maskSecrets, decideRoute, gateExfil, routeStep, tierOf, withPolicies, withPolicyQ,
 } from '../hooks/policy.ts'
 
 const bash = (effect: string, confidence: number, destructive: number): Answers => ({
@@ -245,4 +246,35 @@ test('skill picker judge: the gate and the pick', () => {
   expect(pickSkill(a(0.8, 0.9), c)?.name).toBe('commit')
   expect(pickSkill(a(0.8, 0.1), c)).toBe(null)
   expect(pickSkill(a(0.3, 0.9), c)).toBe(null)
+})
+
+test('writing rules: parsing the extraction, the questions, and what counts as broken', () => {
+  const rules = parseRules('Here: [{"rule":"Use the Oxford comma.","question":"Does `response` list three items without a comma before and?"},{"rule":"No em dashes.","question":"Does `response` contain an em dash?"}]')!
+  expect(rules.length).toBe(2)
+  expect(parseRules('[{"rule":"x"}]')).toBe(undefined)
+  expect(parseRules('no json')).toBe(undefined)
+  expect(Object.keys(ruleQuestions(rules))).toEqual(['rule_0', 'rule_1'])
+  const bad = broken(nouls({ rule_0: 0.9, rule_1: 0.6 }), rules)
+  expect(bad.map(r => r.rule)).toEqual(['Use the Oxford comma.'])
+  expect(rewriteReason(bad)).toContain('- Use the Oxford comma.')
+  expect(filesHash([{ path: 'a', text: 'x' }])).not.toBe(filesHash([{ path: 'a', text: 'y' }]))
+})
+
+test('masking: keys, tokens, URL credentials, labelled values, emails and home become markers; code and placeholders stay', () => {
+  const cases: Array<[string, string]> = [
+    ['export OPENAI_API_KEY=sk-proj-abcdefghijklmnop1234', 'export OPENAI_API_KEY=<masked:api-key>'],
+    ['curl -H "Authorization: Bearer abcdefghijklmnopqrstuvwx" https://x', 'curl -H "Authorization: <masked:auth-header>" https://x'],
+    ['git remote add o https://joe:hunter2pass@github.com/x.git', 'git remote add o https://<masked:url-credentials>@github.com/x.git'],
+    ['password = "correct-horse-battery"', 'password = "<masked:value>"'],
+    ['AWS key AKIAABCDEFGHIJKLMNOP here', 'AWS key <masked:aws-key> here'],
+    ['token=ghp_abcdefghijklmnopqrstuvwxyz0123', 'token=<masked:github-token>'],
+    ['mail joe@presentmyoffer.com now', 'mail <email> now'],
+    ['cat /Users/joey/.ssh/id_ed25519', 'cat ~/.ssh/id_ed25519'],
+    ['API_KEY=replace-me', 'API_KEY=replace-me'],
+    ['TOKEN=${GITHUB_TOKEN}', 'TOKEN=${GITHUB_TOKEN}'],
+    ['rm -rf ~/old-project && git push --force', 'rm -rf ~/old-project && git push --force'],
+  ]
+  for (const [raw, want] of cases) expect([raw, maskText(raw, '/Users/joey')]).toEqual([raw, want])
+  expect(maskText('-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAB3Nza\n-----END OPENSSH PRIVATE KEY-----')).toBe('<masked:private-key>')
+  expect(maskSecrets({ command: 'echo sk-ant-api03-abcdefghijklmnopqrst', n: 3, list: ['a@b.co'] })).toEqual({ command: 'echo <masked:api-key>', n: 3, list: ['<email>'] })
 })

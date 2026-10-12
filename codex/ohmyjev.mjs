@@ -36,6 +36,10 @@ var DEFAULTS = {
   askJev: true,
   browse: false,
   findCode: true,
+  fastCompact: true,
+  subagentCheck: true,
+  proseCheck: true,
+  maskSecrets: true,
   readNarrow: false,
   autoCompact: true,
   compactSwitched: 0.8,
@@ -81,7 +85,7 @@ var WRITE_Q = {
     docs: "Markdown, notes, licenses, changelogs",
     data: "Fixtures, migrations, seeds, exports"
   }),
-  contains_secret: noul("Does `content` contain a real credential, not a placeholder?", "A key, token, password, or connection string with what looks like a real value", "Placeholders like replace-me or xxx, empty values, or no credentials at all")
+  contains_secret: noul("Does `content` contain a real credential, not a placeholder?", "A key, token, password, or connection string with what looks like a real value; a <masked:...> marker means code already found a real one there", "Placeholders like replace-me or xxx, empty values, or no credentials at all")
 };
 var EXFIL_Q = {
   exfiltrates: noul("Does this call to `tool` with `input` send local data, file contents, or credentials to an outside destination?", "Posts or uploads local files, environment values, keys or private code to a URL or service", "Fetches or reads public information, or sends only the query itself")
@@ -462,6 +466,43 @@ function trimmed(chunks, a, c) {
   return out.join(`
 `);
 }
+var BRIEF_Q = {
+  changes_files: noul("Does `brief` ask the subagent to create, edit or delete files?"),
+  names_paths: noul("Does `brief` name the files, folders or modules the work is in?"),
+  acceptance: noul("Does `brief` say how to tell the work is done: the behaviour, output or condition that must hold?"),
+  verification: noul("Does `brief` say what to run or check to verify the work: a test, a build, a command, a page to inspect?")
+};
+var SECRET_SHAPES = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, "private-key"],
+  [/\bsk-ant-[A-Za-z0-9_-]{16,}/g, "api-key"],
+  [/\bsk-(?:proj-|live-|test-)?[A-Za-z0-9_-]{16,}/g, "api-key"],
+  [/\b(?:ts|rk|pk|sk)_(?:live_|test_)?[A-Za-z0-9]{16,}/g, "api-key"],
+  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}/g, "github-token"],
+  [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, "slack-token"],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "aws-key"],
+  [/\bAIza[0-9A-Za-z_-]{30,}/g, "google-key"],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "jwt"],
+  [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}/g, "auth-header"]
+];
+var LABELLED = /\b((?:[A-Z0-9_]*_)?(?:api[_-]?key|apikey|secret|token|passw(?:or)?d|pwd|private[_-]?key|access[_-]?key|client[_-]?secret|auth)[A-Z0-9_]*)(["']?\s*[:=]\s*["']?)([^\s"'`,;&|)]{6,})/gi;
+var URL_CREDS = /(\b[a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/gi;
+var EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+function maskText(s, home = "") {
+  let out = s;
+  for (const [re, kind] of SECRET_SHAPES)
+    out = out.replace(re, `<masked:${kind}>`);
+  out = out.replace(URL_CREDS, (_m, scheme) => `${scheme}<masked:url-credentials>@`).replace(LABELLED, (m, label, sep, value) => value.startsWith("<masked:") || /^(x+|\*+|changeme|replace[-_]?me|your[-_].*|<.*>|\$\{?\w+\}?)$/i.test(value) ? m : `${label}${sep}<masked:value>`).replace(EMAIL, "<email>");
+  return home && home.length > 1 ? out.split(home).join("~") : out;
+}
+function maskSecrets(value, home = "") {
+  if (typeof value === "string")
+    return maskText(value, home);
+  if (Array.isArray(value))
+    return value.map((v) => maskSecrets(v, home));
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, maskSecrets(v, home)]));
+  return value;
+}
 
 // adapters/shared.ts
 import { execFile } from "node:child_process";
@@ -750,10 +791,11 @@ function parseReply(res, provider, questions) {
 // adapters/shared.ts
 var DOWN_MS = 5 * 60000;
 var keyOf = (c, env) => pickKey(c.apiKey, c.jevModel, env.TYPESAFE_API_KEY, env.OPENROUTER_API_KEY);
-async function askJev(c, env, state, questions, fetchImpl = fetch) {
+async function askJev(c, env, raw, questions, fetchImpl = fetch) {
   const k = keyOf(c, env);
   if (!k)
     throw new JevError("no key", true);
+  const state = c.maskSecrets ? maskSecrets(raw, env.HOME ?? "") : raw;
   const started = Date.now();
   let res;
   try {

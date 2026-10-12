@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Guardrails for coding agents, decided by TypeSafe's Jev: blocks destructive commands, catches prompt injection, pushes back on an unverified done and routes effort per turn. For Claude Code, pi and omp.",
   "type": "module",
   "license": "MIT",
@@ -30,9 +30,11 @@
   "files": [
     "adapters/*.ts",
     "hooks/code.ts",
+    "hooks/compact.ts",
     "hooks/dashboard.ts",
     "hooks/jev.ts",
     "hooks/policy.ts",
+    "hooks/prose.ts",
     "extras/"
   ],
   "pi": {
@@ -200,6 +202,26 @@
       "askJev": {
         "type": "boolean",
         "description": "Expose the ask_jev tool for quick judgments about repo files or text",
+        "default": true
+      },
+      "fastCompact": {
+        "type": "boolean",
+        "description": "Compact in about a second: Jev keeps the messages that still matter, verbatim, instead of a model writing a summary",
+        "default": true
+      },
+      "maskSecrets": {
+        "type": "boolean",
+        "description": "Replace keys, tokens, credentials in URLs, emails and your home folder with markers in everything sent to Jev",
+        "default": true
+      },
+      "proseCheck": {
+        "type": "boolean",
+        "description": "Check the final reply against the writing rules in CLAUDE.md and AGENTS.md, and ask for one rewrite when it breaks one (Claude Code)",
+        "default": true
+      },
+      "subagentCheck": {
+        "type": "boolean",
+        "description": "Send a vague subagent brief back once, and check a subagent's done against its own tool record",
         "default": true
       },
       "findCode": {

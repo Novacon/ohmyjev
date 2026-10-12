@@ -4,13 +4,15 @@
  */
 import type { EngineInterface, Register, SessionMessage, ToolCallResult } from 'claude-code'
 import { FIND_DESCRIPTION, FIND_SCHEMA, find, narrowNote, narrowRead, sweep, type CodeIO } from './code.ts'
+import { HEADER as COMPACT_HEADER, judgeable, select, type Block } from './compact.ts'
+import { MIN_REPLY, broken, extractionPrompt, filesHash, parseRules, rewriteReason, ruleQuestions, type Rule } from './prose.ts'
 import { dashboardHtml } from './dashboard.ts'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from './jev.ts'
 import {
   BASH_Q, EXFIL_Q, ROUTE_Q, SCREEN_Q, STOP_Q, SWITCHED_Q, WRITE_Q,
   EMPTY_SESSION, absolute, clip, denyText, expandRoot, gateBash, gateExfil, gateWrite, hostPath, isUnder, judgeStop, normalize, parseWorktrees, pathDenyText, rawAbsolute,
   buildQuestion, builtinRoute, decideRoute, jevRouteLine, keepInstructions, statusText, stepLine, summarize, modelOf, readConfig, routeStep,
-  BROWSE_DESCRIPTION, BROWSE_SCHEMA, BROWSE_TIMEOUT_MS, browseCommand, browseReply, STUCK_Q, fitsQuestion, pickSkill, skillFits, skillNote, skillQuestions, trimChunks, trimRequest, trimmed, approveBash, approveWrite, failureOf, judgeStuck, stuckDue, stuckState, type Failure, callSummary, clipTail, configCommand, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, toggleArg,
+  BROWSE_DESCRIPTION, BROWSE_SCHEMA, BROWSE_TIMEOUT_MS, browseCommand, browseReply, STUCK_Q, BRIEF_Q, maskSecrets, SUBAGENT_DONE_REASON, judgeBrief, fitsQuestion, pickSkill, skillFits, skillNote, skillQuestions, trimChunks, trimRequest, trimmed, approveBash, approveWrite, failureOf, judgeStuck, stuckDue, stuckState, type Failure, callSummary, clipTail, configCommand, plainRead, sanitizeSid, screen, splitList, withPolicies, withPolicyQ, TIER_LABELS, DASHBOARD, OMJ_HELP, OMJ_OFF, OMJ_ON, parseLog, toggleArg,
   type Config, type Judged, type LogEntry, type Route, type Questions, type SessionState, type Verdict,
 } from './policy.ts'
 
@@ -60,9 +62,10 @@ async function keyOf($: $, c: Config): Promise<Key | null> {
 }
 
 /** One decision request, raced against a timeout. Throws JevError; the caller passes through on any failure. */
-async function askJev($: $, c: Config, state: unknown, questions: Questions, timeoutMs: number) {
+async function askJev($: $, c: Config, raw: unknown, questions: Questions, timeoutMs: number) {
   const k = await keyOf($, c)
   if (!k) throw new JevError('no key', true)
+  const state = c.maskSecrets ? maskSecrets(raw, (await $.env.get('HOME')) ?? '') : raw
   const started = Date.now()
   const request = $.http.fetch(ENDPOINTS[k.provider], {
     method: 'POST',
@@ -152,6 +155,10 @@ let lastBlocked = '' // the call a gate denied this turn
 const approved = new Set<string>() // calls Jev cleared as safe: the permission check may skip asking the person
 const approvalKey = (kind: string, input: unknown): string => `${kind}\u0000${arg(input, 'command') || arg(input, 'file_path') || arg(input, 'notebook_path') || arg(input, 'path')}`
 let blockedBefore = '' // what was denied in the turn before this request: a "yes" confirms it
+let proseRules: Rule[] | 'pending' | 'none' = 'none' // the instruction files' writing rules, once extracted
+let proseAt = -1 // request count when the writing-rule check last asked for a rewrite: once per request
+const briefs = new Map<string, string>() // a subagent's brief by its id, for its done-check
+const briefsSentBack = new Set<string>() // briefs sent back once; the same brief again goes through
 let failures: Failure[] = [] // this request's failed tool calls, for the stuck check
 let stuckAskedAt = 0 // how many failures there were when the stuck check last asked
 let userRequest = '' // the user's latest message: the gates ask whether it asked for the call
@@ -343,6 +350,96 @@ async function trimResult($: $, e: { tool: string }, r: ToolCallResult): Promise
   if (!out) return r
   say($, `trimmed Bash output from ${res.stdout.length} to ${out.length} characters`)
   return { ...r, result: { ...res, stdout: out } as never, text: r.text?.includes(res.stdout) ? r.text.replace(res.stdout, out) : out }
+}
+
+/** A transcript's tool calls with their outcome and the end of their output, for a subagent's done-check. */
+function toolRecord(log: string) {
+  const calls = new Map<string, { tool: string; input: string; outcome: string; output: string }>()
+  for (const line of log.split('\n')) {
+    let m: { message?: { content?: unknown } }
+    try {
+      m = JSON.parse(line)
+    } catch {
+      continue
+    }
+    for (const b of Array.isArray(m.message?.content) ? m.message.content : []) {
+      const block = b as { type?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string; content?: unknown; is_error?: boolean }
+      if (block.type === 'tool_use' && block.id) calls.set(block.id, { tool: String(block.name), input: clip(JSON.stringify(block.input ?? {}), 200), outcome: 'pending', output: '' })
+      if (block.type === 'tool_result' && block.tool_use_id && calls.has(block.tool_use_id)) {
+        const text = typeof block.content === 'string' ? block.content : JSON.stringify(block.content ?? '')
+        Object.assign(calls.get(block.tool_use_id)!, { outcome: block.is_error ? 'failed' : 'ok', output: clipTail(text, 300) })
+      }
+    }
+  }
+  return [...calls.values()].slice(-20)
+}
+
+// --- writing-rule check: the final reply against the instruction files' writing rules, rewritten once ---
+
+/** The writing rules in CLAUDE.md and AGENTS.md (repo, then ~/.claude), extracted by a small model once per version. */
+async function loadProseRules($: $): Promise<void> {
+  const home = (await $.env.get('HOME')) ?? ''
+  const root = (await $.session.root()) ?? (await $.session.cwd())
+  const files: Array<{ path: string; text: string }> = []
+  for (const path of [`${root}/CLAUDE.md`, `${root}/AGENTS.md`, `${root}/.claude/CLAUDE.md`, `${home}/.claude/CLAUDE.md`]) {
+    const text = await $.fs.read(path).catch(() => undefined)
+    if (typeof text === 'string' && text.trim()) files.push({ path, text: text.slice(0, 40_000) })
+  }
+  if (!files.length) return void (proseRules = 'none')
+  const x = await session($)
+  const cache = `${x.p.dir}/rules-${filesHash(files)}.json`
+  const cached = await $.fs.read(cache).catch(() => undefined)
+  const fromCache = typeof cached === 'string' ? parseRules(cached) : undefined
+  if (fromCache) return void (proseRules = fromCache.length ? fromCache : 'none')
+  proseRules = 'pending'
+  const reply = await $.model.complete({ model: 'haiku', prompt: extractionPrompt(files), maxTokens: 4000 }).catch(() => '')
+  const rules = parseRules(reply)
+  if (!rules) return void (proseRules = 'none')
+  void $.fs.write(cache, JSON.stringify(rules)).catch(() => undefined)
+  proseRules = rules.length ? rules : 'none'
+  if (rules.length) say($, `writing-rule check: ${rules.length} rules from ${files.map(f => f.path.split('/').slice(-2).join('/')).join(', ')}`)
+}
+
+/** The rewrite request when the reply breaks a writing rule at 0.85 or more; null otherwise. */
+async function proseCheck($: $, reply: string): Promise<string | null> {
+  if (!c.proseCheck || reply.trim().length < MIN_REPLY || !Array.isArray(proseRules)) return null
+  const rules = proseRules
+  const d = await decide($, 'Stop', 'prose', { response: clip(reply, 6000) }, ruleQuestions(rules))
+  if (!d) return null
+  const bad = broken(d.answers, rules)
+  record($, d, bad.length ? 'block' : null, bad.length ? `writing rules broken: ${bad.length}` : 'writing rules ok')
+  return bad.length ? rewriteReason(bad) : null
+}
+
+// --- fast compaction: Jev keeps the messages that matter, verbatim, instead of a model writing a summary ---
+
+const blockOf = (m: SessionMessage): string =>
+  [m.text, ...m.toolUses.map(t => `[tool_use ${t.tool}] ${JSON.stringify(t.input ?? {}).slice(0, 400)}`), ...(m.toolResults ?? []).map(r => `[tool_result] ${String(r.text ?? '').slice(0, 800)}`)]
+    .filter(Boolean).join('\n').trim()
+
+async function fastCompact($: $, messages: readonly SessionMessage[], directive: string) {
+  const started = Date.now()
+  const rows = messages.map(m => ({ m, text: blockOf(m) })).filter(r => judgeable(r.m.role, r.text))
+  const blocks: Block[] = rows.map(r => ({ role: r.m.role, text: r.text }))
+  const kept = await select(async (state, questions) => {
+    const d = await decide($, 'session.compact', 'compact', state, questions)
+    if (!d) return null
+    record($, d, null, 'compaction checks')
+    return d.answers
+  }, blocks, directive)
+  if (!kept) return null
+  const before = blocks.reduce((n, b) => n + b.text.length, 0)
+  const after = kept.reduce((n, k) => n + k.text.length, 0)
+  const out: SessionMessage[] = [{ role: 'user', text: COMPACT_HEADER, toolUses: [] }]
+  for (const k of kept) {
+    const m = rows[k.i]!.m
+    // a plain message kept whole stands as the engine's own; anything with tools or cut is rebuilt as text
+    out.push(!k.truncated && !m.toolUses.length && !m.toolResults?.length && k.text === rows[k.i]!.text ? m : { role: m.role, text: k.text, toolUses: [] })
+  }
+  const x = await session($)
+  x.s.compactions++
+  writeSession($, x.p, x.s)
+  return { messages: out, line: `fast compaction: kept ${kept.length} of ${blocks.length} messages verbatim, ${Math.round((1 - after / Math.max(before, 1)) * 100)}% smaller, ${Date.now() - started} ms` }
 }
 
 // --- read narrowing (before the tool runs): a big Read cut to the part the request points at ---
@@ -569,6 +666,10 @@ export const register: Register = (on, options) => {
   route = undefined
   liveRequest = ''
   approved.clear()
+  proseRules = 'none'
+  proseAt = -1
+  briefs.clear()
+  briefsSentBack.clear()
   failures = []
   stuckAskedAt = 0
   userRequest = ''
@@ -601,16 +702,42 @@ export const register: Register = (on, options) => {
     return yield* next({ ...e, ...patch })
   })
 
-  on('agent.spawn', ($, e, next) => {
-    if (!route || !c.routeSubagents || e.model || e.fork || e.subagentType !== 'general-purpose') return next(e)
-    const model = modelOf(route.tier, c)
-    say($, `subagent → ${model} (${route.tier})`)
-    return next({ ...e, model })
+  on('agent.spawn', async ($, e, next) => {
+    // a brief that changes files without saying where, what done looks like, or how to check: sent back once
+    if (c.enabled && c.subagentCheck && !e.fork && !briefsSentBack.has(e.prompt)) {
+      const d = await decide($, 'agent.spawn', e.subagentType, { brief: clip(e.prompt, 4000), description: clip(e.description, 200) }, BRIEF_Q)
+      const sendBack = d ? judgeBrief(d.answers) : null
+      if (d) record($, d, sendBack ? 'block' : null, sendBack ? 'brief sent back' : 'brief ok')
+      if (sendBack) {
+        briefsSentBack.add(e.prompt)
+        return { deny: sendBack }
+      }
+    }
+    const routed = route && c.routeSubagents && !e.model && !e.fork && e.subagentType === 'general-purpose' ? modelOf(route.tier, c) : undefined
+    if (routed) say($, `subagent → ${routed} (${route!.tier})`)
+    const r = await next(routed ? { ...e, model: routed } : e)
+    if (r.agentId) briefs.set(r.agentId, e.prompt)
+    return r
   }).catch(($, e, next) => next(e))
+
+  // a subagent's "done" checked against its own tool record, once
+  on('classic.SubagentStop', async ($, e, next) => {
+    const r = await next(e)
+    if (!c.enabled || !c.subagentCheck || e.stop_hook_active || !e.agent_transcript_path) return r
+    const log = await $.fs.read(e.agent_transcript_path).catch(() => '')
+    const tools = typeof log === 'string' ? toolRecord(log) : []
+    const state = { current_request: clip(briefs.get(e.agent_id) ?? '', 600), previous_requests: [], tools_this_turn: tools, last_assistant_message: clip(e.last_assistant_message, 1500) }
+    const d = await decide($, 'SubagentStop', e.agent_type, state, STOP_Q)
+    if (!d) return r
+    const j = judgeStop(d.answers, c, tools.length > 0)
+    record($, d, j.block ? 'block' : null, j.block ? 'subagent done unverified' : 'subagent stop ok')
+    return j.block ? { ...r, block: SUBAGENT_DONE_REASON } : r
+  })
 
   on('session.start', async ($, e, next) => {
     if (c.askJev) await $.tool.register({ name: 'ask_jev', description: ASK_DESCRIPTION, inputSchema: ASK_SCHEMA }).catch(() => undefined)
     if (c.browse) await $.tool.register({ name: 'browse', description: BROWSE_DESCRIPTION, inputSchema: BROWSE_SCHEMA }).catch(() => undefined)
+    if (c.enabled && c.proseCheck && (await keyOf($, c))) void loadProseRules($).catch(() => undefined)
     if (c.findCode) await $.tool.register({ name: 'find_code', description: FIND_DESCRIPTION, inputSchema: FIND_SCHEMA }).catch(() => undefined)
     for (const name of ['omj', 'ohmyjev'])
       await $.command.register({ name, description: "ohmyjev: this session's Jev calls, denies, cost and key source; stats opens the dashboard; on/off for this session", argumentHint: '[stats|config [name value]|on|off]' }).catch(() => undefined)
@@ -696,7 +823,7 @@ export const register: Register = (on, options) => {
 
   on('classic.Stop', async ($, e, next) => {
     const r = await next(e)
-    if (!c.enabled || e.stop_hook_active || !(c.doneCheck || c.autoCompact)) return r
+    if (!c.enabled || e.stop_hook_active || !(c.doneCheck || c.autoCompact || c.proseCheck)) return r
     const msgs: SessionMessage[] = await $.session.messages()
     const isRequest = (m: SessionMessage) => m.role === 'user' && m.text.trim() !== ''
     const requests = msgs.filter(isRequest)
@@ -720,7 +847,10 @@ export const register: Register = (on, options) => {
     if (block) pushedBackAt = requests.length
     if (c.autoCompact && j.wantsCompact) compactPending = true
     record($, d, block ? 'block' : null, block ?? (j.wantsCompact ? 'task switched' : 'stop ok'))
-    return block ? { ...r, block } : r
+    if (block) return { ...r, block }
+    const rewrite = proseAt === requests.length ? null : await proseCheck($, e.last_assistant_message ?? msgs.filter(m => m.role === 'assistant').at(-1)?.text ?? '')
+    if (rewrite) proseAt = requests.length
+    return rewrite ? { ...r, block: rewrite } : r
   })
 
   // --- auto-compact: after a turn, once the task switched and the context is full enough ---
@@ -738,10 +868,15 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   /** The engine's own threshold compaction keeps the live request too. */
-  on('session.compact', ($, e, next) => {
-    if (e.trigger !== 'auto' || !liveRequest) return next(e)
-    return next({ ...e, instructions: [e.instructions, keepInstructions(liveRequest)].filter(Boolean).join('\n\n') })
-  })
+  on('session.compact', async ($, e, next) => {
+    const instructions = e.trigger === 'auto' && liveRequest ? [e.instructions, keepInstructions(liveRequest)].filter(Boolean).join('\n\n') : e.instructions
+    const core = () => next(instructions === e.instructions ? e : { ...e, instructions })
+    if (!c.enabled || !c.fastCompact || e.agentId || e.trigger === 'precompute' || !(await keyOf($, c))) return core()
+    const fast = await fastCompact($, e.messages, [instructions, liveRequest].filter(Boolean).join('\n'))
+    if (!fast) return core()
+    say($, fast.line)
+    return { messages: fast.messages }
+  }).catch(($, e, next) => next(e))
 
   on('session.end', ($, e, next) => {
     ctx = undefined
@@ -749,6 +884,10 @@ export const register: Register = (on, options) => {
     route = undefined
     liveRequest = ''
     approved.clear()
+    proseRules = 'none'
+    proseAt = -1
+    briefs.clear()
+    briefsSentBack.clear()
     failures = []
     stuckAskedAt = 0
   userRequest = ''

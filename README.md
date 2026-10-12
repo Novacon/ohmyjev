@@ -70,6 +70,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Stuck check** | After the third failed tool call in a request, Jev reads the failures. If they repeat one approach and fail the same way, the agent is told to stop, read the error and try something else, or ask you. |
 | **Router** | Asks Jev once per request for a tier, an effort level and a risk score. Then it raises or lowers effort and picks the model for general-purpose subagents. With no key it falls back to Claude Code's built-in classifier, which reports no confidence, so then it only ever routes up. |
 | **Auto-compact** | When the task changes after a finished step and the context is at least 40% full, it compacts the conversation. The summary keeps the new request in full. |
+| **Fast compaction** | Claude Code and pi. Instead of a model writing a summary, Jev checks each recent message (a user constraint, a decision, an exact error, open work) and keeps those word for word. Live: 60 messages in 336 ms, all 5 planted constraints and errors kept, no noise. Falls back to the normal summary on any problem. |
 
 ### Safer
 
@@ -82,6 +83,9 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY · typesafe · jev-1.13.0`, you'r
 | **Your request** | Every gate also asks Jev whether your latest message asked for exactly this call. If it did (0.8), a gate's Jev deny lets the call through. So "delete the build folder" or "force push it" works, while the same command picked by the agent on its own is still denied. After a block, a plain "yes" works too: the gate shows Jev the call it just blocked next to your reply. Policy and path denies always stand. |
 | **Injection screen** | When output from Bash, WebFetch, an MCP tool, or a Read outside the repo has instructions aimed at the model, it adds a note telling the model to treat that output as data. |
 | **Done-check** | If the agent says it's done but nothing shows it ran a check, it blocks the stop once and tells the agent to verify. A turn that ran no tools is never blocked, since there was nothing to verify. |
+| **Subagent checks** | Claude Code. A subagent brief that changes files but doesn't say where, what done looks like, or how to check it gets sent back once. A subagent's "done" is checked against its own tool record. |
+| **Writing rules** | Claude Code. Your final reply is checked against the writing rules in `CLAUDE.md` and `AGENTS.md`, and rewritten once if it breaks one. A small model turns the files into questions once per version; Jev asks them of each reply. |
+| **Secret masking** | Keys, tokens, credentials in URLs, emails, and your home folder are swapped for markers in everything sent to Jev. The safety test still scores 28 of 28 with it on. |
 
 ### Tools and commands
 
@@ -410,6 +414,10 @@ one for the session. To keep a change, run `/plugin configure ohmyjev@ohmyjev` i
 | `askJev` | on | Gives the model the `ask_jev` tool. |
 | `browse` | off | Gives the model the `browse` tool. Needs uv and a Chromium-based browser. |
 | `findCode` | on | Gives the model the `find_code` tool. |
+| `fastCompact` | on | Jev keeps the messages that matter instead of a model summary. |
+| `subagentCheck` | on | Checks subagent briefs and subagent "done". |
+| `proseCheck` | on | Checks final replies against your writing rules. |
+| `maskSecrets` | on | Masks secrets in everything sent to Jev. |
 | `readNarrow` | off | Claude Code: cuts a big `Read` to the part the request needs. |
 | `autoApprove` | on | Skips the permission prompt for a call Jev is sure is safe. `approveConfidence` (0.9) and `approveRiskMax` (0.2) set how sure. |
 | `trimOutput` | on | Cuts long shell output to what the request needs. `trimOver` (12000 characters) and `trimKeep` (0.3) tune it. |
@@ -508,4 +516,7 @@ The design and plans are in [`docs/superpowers`](docs/superpowers).
 
 The question rubrics come from [disler/ten-levels-of-jev](https://github.com/disler/ten-levels-of-jev). `browse` runs
 [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast). `find_code`, the `ask_jev` folder sweep and read
-narrowing are ported from [BorisLeMeec/jev](https://github.com/BorisLeMeec/jev), keeping its measured gates. All MIT.
+narrowing are ported from [BorisLeMeec/jev](https://github.com/BorisLeMeec/jev). Fast compaction follows
+[0x7067/claude-jev](https://github.com/0x7067/claude-jev), the subagent checks [austpryb/jev-hooks](https://github.com/austpryb/jev-hooks),
+the writing-rule check [vgeshel/prose-check](https://github.com/vgeshel/prose-check), and masking
+[tsetse012/jev-hook-guard](https://github.com/tsetse012/jev-hook-guard). All MIT.

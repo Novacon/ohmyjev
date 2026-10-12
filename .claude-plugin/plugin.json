@@ -1,6 +1,6 @@
 {
   "name": "ohmyjev",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Jev for Claude Code: Bash and Write gates, an injection screen, and a done-check, decided by TypeSafe's Jev.",
   "author": {
     "name": "lordknows13"
@@ -198,6 +198,30 @@
       "type": "boolean",
       "title": "ask_jev tool",
       "description": "Give the model an ask_jev tool for quick judgments about repo files or text without reading them into context",
+      "default": true
+    },
+    "fastCompact": {
+      "type": "boolean",
+      "title": "Fast compaction",
+      "description": "Compact in about a second: Jev keeps the messages that still matter, verbatim, instead of a model writing a summary",
+      "default": true
+    },
+    "maskSecrets": {
+      "type": "boolean",
+      "title": "Mask secrets sent to Jev",
+      "description": "Replace keys, tokens, credentials in URLs, emails and your home folder with markers in everything sent to Jev",
+      "default": true
+    },
+    "proseCheck": {
+      "type": "boolean",
+      "title": "Writing-rule check",
+      "description": "Check the final reply against the writing rules in CLAUDE.md and AGENTS.md, and ask for one rewrite when it breaks one (Claude Code)",
+      "default": true
+    },
+    "subagentCheck": {
+      "type": "boolean",
+      "title": "Subagent checks",
+      "description": "Send a vague subagent brief back once, and check a subagent's done against its own tool record",
       "default": true
     },
     "findCode": {

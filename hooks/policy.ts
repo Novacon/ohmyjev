@@ -39,6 +39,10 @@ export const DEFAULTS = {
   askJev: true,
   browse: false,
   findCode: true,
+  fastCompact: true,
+  subagentCheck: true,
+  proseCheck: true,
+  maskSecrets: true,
   readNarrow: false,
   autoCompact: true,
   compactSwitched: 0.8,
@@ -126,7 +130,7 @@ export const WRITE_Q: Questions = {
   }),
   contains_secret: noul(
     'Does `content` contain a real credential, not a placeholder?',
-    'A key, token, password, or connection string with what looks like a real value',
+    'A key, token, password, or connection string with what looks like a real value; a <masked:...> marker means code already found a real one there',
     'Placeholders like replace-me or xxx, empty values, or no credentials at all',
   ),
 }
@@ -862,3 +866,63 @@ export const skillFits = (a: Answers, c: Config): boolean => nv(a, 'fits') >= c.
 export const skillNote = (name: string): string =>
   `<skill_relevance>\nRelevant to the current request: the ${name} skill. Load it with the Skill tool (${name}) before you start, and ` +
   'follow it. Ignore this if it does not fit what the user actually asked for.\n</skill_relevance>'
+
+// --- subagents: a brief that says what done looks like, and a done that the tool record shows ---
+
+export const BRIEF_Q: Questions = {
+  changes_files: noul('Does `brief` ask the subagent to create, edit or delete files?'),
+  names_paths: noul('Does `brief` name the files, folders or modules the work is in?'),
+  acceptance: noul('Does `brief` say how to tell the work is done: the behaviour, output or condition that must hold?'),
+  verification: noul('Does `brief` say what to run or check to verify the work: a test, a build, a command, a page to inspect?'),
+}
+/** The missing parts of a brief that changes files, or null when it is complete enough (or changes nothing). */
+export function judgeBrief(a: Answers): string | null {
+  if (nv(a, 'changes_files') < 0.7) return null
+  const missing = [
+    nv(a, 'names_paths') < 0.3 ? 'which files or folders the work is in' : '',
+    nv(a, 'acceptance') < 0.3 ? 'what done looks like' : '',
+    nv(a, 'verification') < 0.3 ? 'what to run to verify it' : '',
+  ].filter(Boolean)
+  return missing.length
+    ? `ohmyjev sent this subagent brief back once: it changes files but doesn't say ${missing.join(', or ')}. Add that and spawn it again.`
+    : null
+}
+export const SUBAGENT_DONE_REASON =
+  "You said this is done but nothing in your own tool record shows it was verified. Run the check now, or say plainly why it can't be verified."
+
+// --- masking: secrets never leave the machine in what ohmyjev sends Jev (after tsetse012/jev-hook-guard, MIT) ---
+
+const SECRET_SHAPES: Array<[RegExp, string]> = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, 'private-key'],
+  [/\bsk-ant-[A-Za-z0-9_-]{16,}/g, 'api-key'],
+  [/\bsk-(?:proj-|live-|test-)?[A-Za-z0-9_-]{16,}/g, 'api-key'],
+  [/\b(?:ts|rk|pk|sk)_(?:live_|test_)?[A-Za-z0-9]{16,}/g, 'api-key'],
+  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}/g, 'github-token'],
+  [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, 'slack-token'],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, 'aws-key'],
+  [/\bAIza[0-9A-Za-z_-]{30,}/g, 'google-key'],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, 'jwt'],
+  [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}/g, 'auth-header'],
+]
+const LABELLED = /\b((?:[A-Z0-9_]*_)?(?:api[_-]?key|apikey|secret|token|passw(?:or)?d|pwd|private[_-]?key|access[_-]?key|client[_-]?secret|auth)[A-Z0-9_]*)(["']?\s*[:=]\s*["']?)([^\s"'`,;&|)]{6,})/gi
+const URL_CREDS = /(\b[a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/gi
+const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g
+
+/** A string with secrets, credentials in URLs, emails and the home folder replaced by markers. */
+export function maskText(s: string, home = ''): string {
+  let out = s
+  for (const [re, kind] of SECRET_SHAPES) out = out.replace(re, `<masked:${kind}>`)
+  out = out
+    .replace(URL_CREDS, (_m, scheme) => `${scheme}<masked:url-credentials>@`)
+    .replace(LABELLED, (m, label: string, sep: string, value: string) => (value.startsWith('<masked:') || /^(x+|\*+|changeme|replace[-_]?me|your[-_].*|<.*>|\$\{?\w+\}?)$/i.test(value) ? m : `${label}${sep}<masked:value>`))
+    .replace(EMAIL, '<email>')
+  return home && home.length > 1 ? out.split(home).join('~') : out
+}
+
+/** Every string in a value masked, for the state of a Jev request. */
+export function maskSecrets<T>(value: T, home = ''): T {
+  if (typeof value === 'string') return maskText(value, home) as T
+  if (Array.isArray(value)) return value.map(v => maskSecrets(v, home)) as T
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, maskSecrets(v, home)])) as T
+  return value
+}

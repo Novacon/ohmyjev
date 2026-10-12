@@ -277,7 +277,7 @@ const spawnArgs = {
   provider: { name: 'engine' }, parentModel: 'claude-sonnet-5-5',
 }
 
-test('the router raises effort and picks the subagent model for a deep request', async ($, on) => {
+test('the router raises effort and picks the subagent model for a deep request', { options: { subagentCheck: false } }, async ($, on) => {
   const fake = harness(on, () => routeAns('deep', 3, 0.9))
   const seen = model(on)
   await $.turn.start({ text: 'redesign the auth flow', turnId: 't1' })
@@ -729,4 +729,72 @@ test('readNarrow turns a big Read into a window around the request, with a note'
   expect(r.context?.at(-1)).toContain('Narrowed this Read')
   await $.tool.call({ tool: 'Read', file_path: 'src/join.ts', offset: 1, limit: 20 })
   expect(got).toMatchObject({ offset: 1, limit: 20 }) // the agent's own window is left alone
+})
+
+test('fast compaction keeps what Jev rates as needed, verbatim, and drops the rest', async ($, on) => {
+  const long = Array.from({ length: 12 }, (_, i) => msg(i % 2 ? 'assistant' : 'user', i === 2 ? 'never touch the migrations folder' : `chatter ${i} about nothing much`))
+  harness(on, q => Object.fromEntries(Object.keys(q).map(k => [k, { type: 'noul' as const, noul: k === 'constraint_2' ? 0.95 : 0.05 }])))
+  const r = await $.session.compact({ trigger: 'manual', messages: long }) as { messages?: Array<{ text: string }> }
+  const texts = r.messages!.map(m => m.text)
+  expect(texts[0]).toContain('compacted by ohmyjev')
+  expect(texts).toContain('never touch the migrations folder')
+  expect(texts.filter(t => t.startsWith('chatter')).length).toBe(4) // only the pinned tail
+})
+
+test('fast compaction falls back to the engine when Jev is down', async ($, on) => {
+  const long = Array.from({ length: 12 }, (_, i) => msg(i % 2 ? 'assistant' : 'user', `message ${i} with enough words`))
+  harness(on, () => 'hang')
+  const clock = mock.clock(on)
+  const pending = $.session.compact({ trigger: 'manual', messages: long })
+  await clock.settle()
+  await clock.advance(1500)
+  expect(await pending).toEqual({ skip: 'test' })
+})
+
+test('a subagent brief that changes files without saying where or how to check is sent back once', async ($, on) => {
+  const fake = harness(on, q => ('changes_files' in q ? nouls({ changes_files: 0.95, names_paths: 0.1, acceptance: 0.8, verification: 0.05 }) : {}))
+  on('agent.spawn', ($, e) => ({ model: e.model ?? 'claude-sonnet-5-5', agentId: 'sub-1' }))
+  const spawn = { prompt: 'refactor the auth stuff', description: 'refactor', subagentType: 'general-purpose', provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: false, fork: false }
+  const first = await $.agent.spawn(spawn as never)
+  expect(first.deny).toContain("doesn't say which files or folders the work is in, or what to run to verify it")
+  const again = await $.agent.spawn(spawn as never)
+  expect(again.deny).toBe(undefined)
+  expect(fake.requests.filter(r => 'changes_files' in r.body.questions).length).toBe(1)
+})
+
+test("a subagent's done is checked against its own tool record", async ($, on) => {
+  const fake = harness(on, () => nouls({ claimed_done: 0.95, verified: 0.05, asks_user: 0, at_boundary: 1 }))
+  fake.files['/tmp/sub.jsonl'] = [
+    JSON.stringify({ message: { content: [{ type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: 'a.ts' } }] } }),
+    JSON.stringify({ message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } }),
+  ].join('\n')
+  on('classic.SubagentStop', () => ({}))
+  const r = await $.classic.SubagentStop({ stop_hook_active: false, agent_id: 'sub-1', agent_type: 'general-purpose', agent_transcript_path: '/tmp/sub.jsonl', last_assistant_message: 'Done, refactored.' } as never)
+  expect(r.block).toContain('your own tool record')
+  const state = fake.requests.at(-1)!.body.state as { tools_this_turn: Array<{ tool: string }> }
+  expect(state.tools_this_turn[0]!.tool).toBe('Edit')
+})
+
+test('the writing-rule check asks once for a rewrite when the reply breaks a CLAUDE.md rule', async ($, on) => {
+  const rules = [{ rule: 'Use the Oxford comma.', question: 'Does `response` list three or more items without a comma before the last and?' }]
+  const fake = harness(on, q => ('rule_0' in q ? nouls({ rule_0: 0.93 }) : stopAns({})), { messages: [msg('user', 'summarize the release'), msg('assistant', 'x')] })
+  fake.files['/repo/CLAUDE.md'] = '# Writing\nAlways use the Oxford comma.'
+  on('model.complete', () => ({ value: JSON.stringify(rules) }))
+  on('session.start', ($, e) => e)
+  await $.session.start({ source: 'startup', cwd: '/repo' } as never)
+  await flush(); await flush()
+  const reply = 'This release adds faster compaction, subagent checks and a writing-rule check, along with masking of secrets before anything leaves the machine for Jev. '.repeat(2)
+  const first = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: reply })
+  expect(first.block).toContain('- Use the Oxford comma.')
+  const again = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: reply })
+  expect(again.block).toBe(undefined) // once per request
+})
+
+test('nothing secret reaches Jev: the bash gate sees a marker, not the key', async ($, on) => {
+  const fake = harness(on, () => ({ ...bashAns('reversible', 0.9, 0), ...nouls({ exfiltrates: 0, injection: 0 }) }))
+  tool(on)
+  await $.tool.call({ tool: 'Bash', command: 'export STRIPE_KEY=sk_live_abcdefghijklmnop1234 && npm run deploy' })
+  const sent = JSON.stringify(fake.requests[0]!.body.state)
+  expect(sent).not.toContain('sk_live_abcdefghijklmnop1234')
+  expect(sent).toContain('<masked:api-key>')
 })

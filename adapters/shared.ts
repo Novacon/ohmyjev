@@ -10,7 +10,7 @@ import { dashboardHtml } from '../hooks/dashboard.ts'
 import { ENDPOINTS, JevError, parseReply, pickKey, type Key } from '../hooks/jev.ts'
 import {
   BROWSE_TIMEOUT_MS, DASHBOARD, EMPTY_SESSION, EXFIL_Q, SCREEN_Q, browseCommand, browseReply, denyText, gateExfil, screen, withPolicies, withPolicyQ, absolute, buildQuestion, clip, expandRoot, hostPath, isUnder, normalize, parseLog, parseWorktrees, rawAbsolute, sanitizeSid,
-  STUCK_Q, trimChunks, trimRequest, trimmed, failureOf, judgeStuck, stuckDue, stuckState, splitList, statusText, summarize, type Failure, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
+  STUCK_Q, maskSecrets, trimChunks, trimRequest, trimmed, failureOf, judgeStuck, stuckDue, stuckState, splitList, statusText, summarize, type Failure, type Answers, type Config, type LogEntry, type Questions, type SessionState, type Verdict,
 } from '../hooks/policy.ts'
 
 export type Env = Readonly<Record<string, string | undefined>>
@@ -23,9 +23,10 @@ export const keyOf = (c: Config, env: Env): Key | null => pickKey(c.apiKey, c.je
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>
 
 /** One decision request, cut off at c.timeoutMs. Throws JevError; the caller passes through on any failure. */
-export async function askJev(c: Config, env: Env, state: unknown, questions: Questions, fetchImpl: Fetch = fetch) {
+export async function askJev(c: Config, env: Env, raw: unknown, questions: Questions, fetchImpl: Fetch = fetch) {
   const k = keyOf(c, env)
   if (!k) throw new JevError('no key', true)
+  const state = c.maskSecrets ? maskSecrets(raw, env.HOME ?? '') : raw
   const started = Date.now()
   let res: { ok: boolean; status: number; text: string }
   try {
