@@ -39,6 +39,14 @@ const arg = (e: unknown, k: string): string => {
  */
 const BRIDGED: Record<string, string> = { bash: 'Bash', read: 'Read', write: 'Write', edit: 'Edit' }
 const kindOf = (tool: string): string => BRIDGED[/^mcp__custom-tools__(\w+)$/.exec(tool)?.[1] ?? ''] ?? tool
+
+/**
+ * A pi tool the bridge already ran: pi executes the call before this hook's verdict reaches it, so a deny here would
+ * only tell the model "blocked" about a call that happened. pi's own ohmyjev (it sets OHMYJEV_PI) gates it instead.
+ */
+async function ranByPi($: $, tool: string): Promise<boolean> {
+  return tool.startsWith('mcp__custom-tools__') && (await $.env.get('OHMYJEV_PI')) === '1'
+}
 /** The local path a file call names, as the host's tool opens it; null for another machine (deny). */
 const pathOf = (e: unknown): string | null => hostPath(arg(e, 'file_path') || arg(e, 'notebook_path') || arg(e, 'path'))
 
@@ -340,7 +348,7 @@ async function screenResult($: $, e: { tool: string }, r: ToolCallResult): Promi
 async function trimResult($: $, e: { tool: string }, r: ToolCallResult): Promise<ToolCallResult> {
   const res = r.result as { stdout?: unknown } | undefined
   if (!c.trimOutput || e.tool !== 'Bash' || typeof res?.stdout !== 'string') return r
-  const chunks = trimChunks(res.stdout, c)
+  const chunks = trimChunks(res.stdout, c, arg(e, 'command'))
   if (!chunks.length) return r
   const { state, questions } = trimRequest(userRequest, chunks)
   const d = await decide($, 'tool.result', 'trim', state, questions)
@@ -800,7 +808,7 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: HOOKED }, async ($, e, next) => {
     if (e.tool === ASK) return answerAsk($, e as Record<string, unknown>)
     if (e.tool === FIND) return answerFind($, e as Record<string, unknown>)
-    if (c.enabled && c.readNarrow && kindOf(String(e.tool)) === 'Read') {
+    if (c.enabled && c.readNarrow && kindOf(String(e.tool)) === 'Read' && !(await ranByPi($, String(e.tool)))) {
       const narrowed = await narrowCall($, e as Record<string, unknown>)
       if (narrowed) {
         const r = await screenResult($, e, await next({ ...e, offset: narrowed.n.offset, limit: narrowed.n.limit } as typeof e))
@@ -813,7 +821,7 @@ export const register: Register = (on, options) => {
       const r = await runBrowse($, e as Record<string, unknown>)
       return c.enabled ? screenResult($, e, r) : r
     }
-    if (!c.enabled) return next(e)
+    if (!c.enabled || (await ranByPi($, String(e.tool)))) return next(e)
     const denied = await gate($, e)
     if (denied) return { deny: denied }
     return checkStuck($, e, await screenResult($, e, await trimResult($, e, await next(e))))

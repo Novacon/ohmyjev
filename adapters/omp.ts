@@ -607,7 +607,7 @@ export function createExtension(options: OmpExtensionOptions = {}): (pi: OmpApi)
         const tool = event.toolName
         const input = object(event.input)
         let resultText = event.content.map(part => part.type === 'text' && typeof part.text === 'string' ? part.text : '').filter(Boolean).join('\n')
-        const cut = tool === 'bash' ? await trimOutput(session, userRequest, resultText) : null
+        const cut = tool === 'bash' ? await trimOutput(session, userRequest, resultText, String(input.command ?? '')) : null
         if (cut) resultText = cut
         const base = cut ? [...event.content.filter(part => part.type !== 'text'), { type: 'text', text: cut }] : event.content
         const stuckText = (event as { isError?: boolean }).isError ? await stuckNote(session, stuck, userRequest, tool, input, resultText) : null

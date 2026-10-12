@@ -62,7 +62,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY`, you're set. Codex, pi, and omp 
 |---|---|
 | **Auto-approve** | When Claude Code or Codex would ask you, a command Jev is sure is safe just runs, and so does an edit in the repo with no key in it. `ls`, `git status`, and `grep` skip Jev entirely. Off while you have `policies` set. |
 | **Fast compaction** | Jev keeps the messages that still matter (your constraints, decisions, exact errors, and open work) word for word, instead of a model writing a summary. 60 messages took 336 ms with every planted constraint kept. Falls back to the normal summary if anything goes wrong. |
-| **Trim long output** | Shell output over 12,000 characters is cut to the parts your request needs. A 20,000-character test log came back as 4,600, failure included. |
+| **Trim long output** | Shell output over 12,000 characters is cut to the parts your request needs, with a note naming the lines it left out. A 20,000-character test log came back as 4,600, failure included. File reads like `cat` and `sed -n` are never cut. |
 | **Skill picker** | Claude Code sends a line for every skill on every prompt. ohmyjev drops that list and loads only the one skill you need, or none. |
 | **Stuck check** | Same failure three times? The agent is told to stop, read the error, and try something else. |
 | **Router** | Picks effort and the subagent model for each request. With `routeMainModel` on it picks the main model too: it sent a flight search to Haiku, 108 s down to 44 s. |
@@ -78,7 +78,7 @@ If `/omj` ends with `key: env TYPESAFE_API_KEY`, you're set. Codex, pi, and omp 
 | **Write gate** | Blocks writes outside the repo or with a real key in them. Every worktree counts as the repo, and so does another repo the agent moves into. |
 | **Exfil gate** | Blocks web and MCP calls that send your files or keys out. |
 | **Policies** | Your own rules in plain English, checked on every call. |
-| **Injection screen** | Output that tries to give the model orders gets a "treat as data" note. |
+| **Injection screen** | Output that slips orders to the model where they don't belong, like a README or an error, gets a "treat as data" note. A prompt or transcript you're debugging doesn't. |
 | **Done-check** | "Done" with nothing tested gets pushed back once. Passing test output counts. |
 | **Subagent checks** | A vague subagent brief goes back once. A subagent's "done" is checked against what it actually ran. Claude Code. |
 | **Writing rules** | Your final reply is checked against the writing rules in `CLAUDE.md` and `AGENTS.md`, and rewritten once if it breaks one. Claude Code. |
@@ -162,6 +162,9 @@ Settings go under `ohmyjev` in `~/.pi/agent/settings.json`, or `.pi/settings.jso
 ```json
 { "ohmyjev": { "routeMainModel": true, "fastModel": "anthropic/claude-haiku-5-5" } }
 ```
+
+Running Claude Code inside pi through pi-claude-bridge? pi runs the tools, so pi's copy of ohmyjev checks them and the
+Claude Code copy leaves them alone. Keep pi's gates on, and use `/omj off` in pi.
 
 ### By host
 
@@ -338,6 +341,7 @@ git clone https://github.com/Novacon/ohmyjev && cd ohmyjev && bun install
 claude --plugin-dir "$PWD"                  # or: omp -e ./adapters/omp.ts, pi -e ./adapters/pi.ts
 bun run test && bun run typecheck && claude plugin validate .
 bun tests/live.ts                           # 28 real commands against the live Jev
+bun tests/live-screen.ts                    # 11 outputs against the injection screen
 ```
 
 The decisions live in `hooks/policy.ts`, plain functions tested with tables. `hooks/ohmyjev.ts` wires them to Claude

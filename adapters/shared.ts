@@ -366,9 +366,9 @@ export async function stuckNote(x: Session, st: Stuck, request: string, tool: st
 // --- output trim ---
 
 /** A long shell output cut to the parts the request needs; null to keep it whole. */
-export async function trimOutput(x: Session, request: string, output: string): Promise<string | null> {
+export async function trimOutput(x: Session, request: string, output: string, command: string): Promise<string | null> {
   if (!x.c.enabled) return null
-  const chunks = trimChunks(output, x.c)
+  const chunks = trimChunks(output, x.c, command)
   if (!chunks.length) return null
   const { state, questions } = trimRequest(request, chunks)
   const d = await x.decide('tool.result', 'trim', state, questions)

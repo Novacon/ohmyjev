@@ -143,7 +143,7 @@ export async function handle(input: Input, env: Env, fetchImpl?: Fetch): Promise
     await save(env, sid, st)
     const notes = stuck ? [stuck] : []
     // a cut output replaces the result: Codex hooks can't edit it, but a PostToolUse block's reason stands in for it
-    const cut = tool === 'Bash' ? await trimOutput(x, st.request, shown) : null
+    const cut = tool === 'Bash' ? await trimOutput(x, st.request, shown, String(obj(toolInput).command ?? '')) : null
     if (cut) return { decision: 'block', reason: [cut, ...notes].join('\n') }
     const context = () => (notes.length ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: notes.join('\n') } } : undefined)
     if (!c.injectionScreen || !(tool === 'Bash' || tool.startsWith('mcp__')) || !shown.trim()) return context()

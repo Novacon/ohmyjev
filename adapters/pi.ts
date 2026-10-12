@@ -253,6 +253,8 @@ async function classifyBuiltin(ctx: PiContext, c: Config, request: string): Prom
 export function createExtension(options: PiAdapterOptions = {}) {
   return async (pi: PiExtensionAPI): Promise<void> => {
     const env: Env = options.env ?? process.env
+    // Claude Code started by pi-claude-bridge inherits this, and leaves pi's bridged tools to this copy (it runs them).
+    process.env.OHMYJEV_PI = '1'
     const initialCwd = options.cwd ?? process.cwd()
     let c = options.config ? readConfig(options.config) : await readSettings(initialCwd, env, false)
     let session: Session | undefined
@@ -551,7 +553,7 @@ export function createExtension(options: PiAdapterOptions = {}) {
       const tool = event.toolName
       const shell = tool === 'bash' || tool === 'powershell'
       let text = event.content.filter((part): part is TextContent => part.type === 'text').map(part => part.text).join('\n')
-      const cut = shell ? await trimOutput(await ensureSession(ctx), userRequest, text) : null
+      const cut = shell ? await trimOutput(await ensureSession(ctx), userRequest, text, arg(event.input, 'command')) : null
       if (cut) {
         text = cut
         event = { ...event, content: [...event.content.filter(part => part.type !== 'text'), { type: 'text', text: cut }] }

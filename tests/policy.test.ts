@@ -235,7 +235,12 @@ test('output trim: chunks, one question per middle chunk, and the cut', () => {
   const out = trimmed(chunks, a, c)!
   expect(out).toContain('FAIL test 250')
   expect(out).toContain(chunks[0]!.split('\n')[0]!)
-  expect(out).toContain('lines left out')
+  expect(out).toMatch(/lines \d+-\d+ left out as unrelated to the request, starting "test \d+ passed/)
+  const [, from, to] = /lines (\d+)-(\d+)/.exec(out)!
+  expect(output.split('\n').slice(Number(from) - 1, Number(to)).join('\n')).toBe(chunks.slice(1, failing).join('\n'))
+  expect(trimChunks(output, c, 'cat README.md')).toEqual([])
+  expect(trimChunks(output, c, "sed -n '1,500p' docs/install.md")).toEqual([])
+  expect(trimChunks(output, c, 'bun test').length).toBe(chunks.length)
   expect(out.length).toBeLessThan(output.length / 2)
   expect(trimmed(chunks, nouls(Object.fromEntries(Object.keys(questions).map(k => [k, 0.9]))), c)).toBe(null)
   expect(Object.keys(state.chunks).length).toBe(chunks.length - 2)
