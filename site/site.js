@@ -141,6 +141,14 @@ if (termBody) {
       ['r', '12 pass · 0 fail'],
       ['a', 'Verified: all 12 date tests pass.'],
     ] },
+    { status: STATUS(26, 0, 'sonnet/medium'), lines: [
+      ['u', 'make an instagram post about our new pricing page'],
+      ['r', '<span class="c">[ohmyjev]</span> skill: social-content-creator (0.71) · fits 0.88 · skill list left out of the prompt'],
+      ['t', '<b>Skill</b>(social-content-creator)'],
+      ['r', 'Loaded social-content-creator'],
+      ['t', '<b>Read</b>(site/pricing.html)'],
+      ['a', 'Drafted a 1080×1350 post from the pricing page, in the brand palette, with the caption below.'],
+    ] },
   ];
   const termInput = $('term-input'), termStatus = $('term-status');
   const sceneBtns = [...document.querySelectorAll('.scene')];
