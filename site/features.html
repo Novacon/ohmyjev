@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Features · ohmyjev</title>
+<meta name="description" content="Every ohmyjev feature, how each decides, every setting, what it sends, how it differs across Claude Code, Codex, pi and omp, and how each number was measured.">
+<meta name="theme-color" content="#0a090c">
+<link rel="icon" href="logo.webp">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="./" aria-label="ohmyjev home"><img src="logo.webp" alt="ohmyjev" width="900" height="272"></a>
+    <nav aria-label="Site">
+      <a href="features.html" aria-current="page">Features</a>
+      <a class="hide-sm" href="https://github.com/Novacon/ohmyjev">GitHub</a>
+      <a class="btn" href="./#install">Install</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="ref-hero">
+    <h1>Every feature, setting and limit.</h1>
+    <p class="lede">ohmyjev asks <a href="https://typesafe.ai">Jev</a>, TypeSafe's decision model, typed questions at every step a coding agent takes. Jev answers with probabilities in about 160 ms for about $0.00003, and code turns those numbers into a decision. Here is each one.</p>
+  </div>
+
+  <div class="ref">
+    <nav class="toc" aria-label="On this page">
+      <a href="#faster">Faster</a>
+      <a href="#safer">Safer</a>
+      <a href="#tools">Tools and commands</a>
+      <a href="#decides">How it decides</a>
+      <a href="#install">Install</a>
+      <a href="#settings">Settings</a>
+      <a href="#hosts">By host</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#numbers">Measurements</a>
+    </nav>
+
+    <div>
+      <section class="chapter" id="faster" aria-labelledby="h-faster">
+        <h2 id="h-faster">Faster</h2>
+        <div class="feature-list">
+          <div class="feature"><h3>Auto-approve</h3><p>Where Claude Code or Codex would stop to ask you, a command Jev is sure only reads or can be undone runs without the prompt, and so does an edit inside the repo with no credential in it. It only answers "allow" where the engine was about to ask and your settings left the call open. Off whenever you've set <code>policies</code>.</p><p class="meta"><code>autoApprove</code><span>Claude Code, Codex</span><span>0.9 confidence, under 0.2 risk</span></p></div>
+          <div class="feature"><h3>Plain-read fast path</h3><p><code>ls</code>, <code>git status</code>, <code>grep</code>, <code>cat</code> and friends, alone, piped or chained, are cleared by code with no Jev call. Anything that could write still goes to Jev: redirects, <code>$(…)</code>, <code>find -exec</code>, <code>sed -i</code>, <code>git stash</code>.</p><p class="meta"><span>Always on, off while <code>policies</code> are set</span><span>All hosts</span></p></div>
+          <div class="feature"><h3>Trim long output</h3><p>A shell output over 12,000 characters is split into parts, and one Jev call rates which parts your request needs: the error, the failing test, the value you asked for. The rest becomes one line saying how much was left out and how to see it.</p><p class="meta"><code>trimOutput</code><code>trimOver</code><code>trimKeep</code><span>All hosts</span></p></div>
+          <div class="feature"><h3>Model router</h3><p>One Jev call per request rates the work and the reasoning it needs, then raises or lowers effort and picks the model for general-purpose subagents. With <code>routeMainModel</code> on it also switches the main model; that's off by default because switching drops the prompt cache. In the flights test it sent the task to Haiku: 108 s down to 44 s.</p><p class="meta"><code>routeEffort</code><code>routeSubagents</code><code>routeMainModel</code><span>Claude Code, omp, pi</span></p></div>
+          <div class="feature"><h3><code>browse</code></h3><p>A tool for web tasks. The agent passes a URL, one goal and the words to type; <a href="https://github.com/browser-use/jev-ultrafast">jev-ultrafast</a> runs it in its own headless Chrome, Chromium, Brave or Edge, signed in to nothing, with Jev picking each click and field. Needs <a href="https://docs.astral.sh/uv">uv</a>.</p><p class="meta"><code>browse</code><span>Off by default</span><span>Claude Code, omp, pi</span></p></div>
+          <div class="feature"><h3>Skill picker</h3><p>Claude Code sends the model a line for every skill you have, on every prompt. ohmyjev leaves that list out, asks Jev whether a prompt needs a skill and which, then checks the pick does the job before naming it. A prompt no skill fits gets none.</p><p class="meta"><code>skillPick</code><code>skillGate</code><code>skillMin</code><span>Claude Code, with a Jev key</span></p></div>
+          <div class="feature"><h3>Stuck check</h3><p>From the third failed tool call in a request, Jev reads the failures. If they repeat one approach and fail the same way, the agent is told to stop, read the error and try something else, or ask you.</p><p class="meta"><code>stuckCheck</code><code>stuck</code><span>All hosts</span></p></div>
+          <div class="feature"><h3>Auto-compact</h3><p>When the task changes after a finished step and the context is at least 40% full, it compacts, keeping the new request in full.</p><p class="meta"><code>autoCompact</code><code>compactMinPercent</code><span>Claude Code, omp, pi</span></p></div>
+        </div>
+      </section>
+
+      <section class="chapter" id="safer" aria-labelledby="h-safer">
+        <h2 id="h-safer">Safer</h2>
+        <div class="feature-list">
+          <div class="feature"><h3>Bash gate</h3><p>Denies a command Jev rates irreversible at 0.6 or more, or one that sends local files or secrets to an outside host at 0.7. Reversible work always passes: deleting lines, dropping a co-author trailer, uninstalling, ordinary pushes.</p><p class="meta"><code>bashGate</code><code>bashIrreversible</code><code>exfil</code></p></div>
+          <div class="feature"><h3>Say yes</h3><p>Every gate also asks whether your latest message asked for exactly this call. "Delete the build folder" lets <code>rm -rf build</code> through. After a block, a plain "yes" works too, because the gate shows Jev the call it just blocked. "No", or a yes followed by a different command, is still denied. Policy and path denies always stand.</p><p class="meta"><code>requested</code><span>0.8</span></p></div>
+          <div class="feature"><h3>Write gate</h3><p>Denies writes outside the repo and <code>allowPaths</code>, and writes that contain a real credential. Every worktree of the repo counts, and so does another repo the agent moves into. The path check is plain code, not Jev, and follows symlinks the way the OS does.</p><p class="meta"><code>writeGate</code><code>allowPaths</code></p></div>
+          <div class="feature"><h3>Exfil gate</h3><p>Denies a WebFetch or MCP call Jev rates 0.7 or more for sending your data, files or credentials out. <code>browse</code> goals pass it before a browser opens.</p><p class="meta"><code>exfilGate</code></p></div>
+          <div class="feature"><h3>Policies</h3><p>Your own plain-English rules, separated by <code>;</code>. Every gate checks each call against them, and no "yes" overrides one.</p><p class="meta"><code>policies</code></p></div>
+          <div class="feature"><h3>Injection screen</h3><p>Output from Bash, WebFetch, MCP, <code>browse</code> or a Read outside the repo that gives the model instructions gets a note telling it to treat the text as data.</p><p class="meta"><code>injectionScreen</code><code>screenReads</code></p></div>
+          <div class="feature"><h3>Done-check</h3><p>If the agent says it's done but nothing shows it ran a check, it blocks the stop once and tells the agent to verify. It reads the end of each command's output, so a passing test run counts, and a turn with no tools is never blocked.</p><p class="meta"><code>doneCheck</code></p></div>
+        </div>
+      </section>
+
+      <section class="chapter" id="tools" aria-labelledby="h-tools">
+        <h2 id="h-tools">Tools and commands</h2>
+        <div class="feature-list">
+          <div class="feature"><h3><code>/omj</code></h3><p>This session's Jev calls, errors, cost, median latency and denies, and where the key comes from, never the key. <code>/ohmyjev</code> is the same command.</p><p class="meta"><span>Claude Code, omp, pi</span></p></div>
+          <div class="feature"><h3><code>/omj config</code></h3><p>Lists every setting; <code>/omj config &lt;name&gt; &lt;value&gt;</code> changes one for the session, checked against its type. The key can't be set here, so it never lands in the transcript.</p></div>
+          <div class="feature"><h3><code>/omj stats</code></h3><p>Opens a local dashboard of every session: totals, a 30-day chart, a table per tool and per session, and the latest denies with reasons. Built from the logs; nothing leaves the machine.</p></div>
+          <div class="feature"><h3><code>/omj off</code>, <code>on</code></h3><p>Every gate, screen, check and the router off or on for this session. The <code>enabled</code> setting is the default for new sessions.</p><p class="meta"><code>enabled</code></p></div>
+          <div class="feature"><h3><code>ask_jev</code></h3><p>A tool the model calls to ask Jev about repo files or text without reading them into its own context: which file handles login, does this log show the failure.</p><p class="meta"><code>askJev</code><span>Repo files only, 8,000 characters each, 80,000 in all</span></p></div>
+        </div>
+      </section>
+
+      <section class="chapter" id="decides" aria-labelledby="h-decides">
+        <h2 id="h-decides">How it decides</h2>
+        <p class="lede">Every tool call gets one quick question to Jev. A clear risk is denied, a clearly safe call skips the prompt, and anything in between goes on to the host's normal flow, the same as without ohmyjev.</p>
+        <div class="flow">
+          <div class="stage">
+            <h3>Before the call <span>~160 ms</span></h3>
+            <div class="rule"><span class="if">Clearly risky</span><span class="then deny">Denied, with the reason</span></div>
+            <div class="rule"><span class="if">Clearly safe</span><span class="then ok">Runs, no permission prompt</span></div>
+            <div class="rule"><span class="if">Unsure</span><span class="then">The host's normal flow</span></div>
+            <div class="rule"><span class="if">Jev down, slow or no key</span><span class="then">The host's normal flow</span></div>
+          </div>
+          <div class="stage">
+            <h3>After the call</h3>
+            <div class="rule"><span class="if">Long, mostly unrelated</span><span class="then ok">Cut to what the request needs</span></div>
+            <div class="rule"><span class="if">The same failure, a third time</span><span class="then deny">Told to change approach</span></div>
+            <div class="rule"><span class="if">Gives the model orders</span><span class="then deny">"Treat as data" note</span></div>
+            <div class="rule"><span class="if">None of these</span><span class="then ok">Output as is</span></div>
+          </div>
+        </div>
+        <p class="note">It fails open: a middling answer, a slow or down Jev, a missing key or any error inside ohmyjev falls through to the normal flow. Jev can be wrong, so keep your deny rules in <code>settings.json</code>.</p>
+      </section>
+
+      <section class="chapter" id="install" aria-labelledby="h-install">
+        <h2 id="h-install">Install</h2>
+        <div class="install">
+          <div class="host"><h3>Claude Code</h3><pre>/plugin install ohmyjev <span class="nw">--marketplace</span> Novacon/ohmyjev</pre><p class="note">2.1.287 or later. Hooks run right away.</p></div>
+          <div class="host"><h3>Codex</h3><pre>codex plugin marketplace add Novacon/ohmyjev
+codex plugin add ohmyjev@ohmyjev</pre><p class="note">Trust its hooks once in <code>/hooks</code>. Needs Node.</p></div>
+          <div class="host"><h3>omp</h3><pre>omp plugin install ohmyjev</pre><p class="note">Restart the session.</p></div>
+          <div class="host"><h3>pi</h3><pre>pi install npm:ohmyjev</pre><p class="note">Restart pi.</p></div>
+        </div>
+        <p class="prose">Set <code>TYPESAFE_API_KEY</code> in the shell that starts your agent, or <code>OPENROUTER_API_KEY</code> to reach Jev through OpenRouter. In Claude Code you can also enter it on the settings screen during install. Run <code>/omj</code>: its last line says where the key came from.</p>
+        <div class="troubles">
+          <div class="trouble"><h3>jev ⚠ no key</h3><p>The key isn't visible to the agent. Set it in the shell that starts it, or with <code>/plugin configure ohmyjev@ohmyjev</code>.</p></div>
+          <div class="trouble"><h3>jev ⚠ down</h3><p>A Jev call failed or took over 1.5 s in the last 5 minutes. Gates let calls through until Jev answers again.</p></div>
+          <div class="trouble"><h3>Blocked by mistake</h3><p>Answer the agent's question with "yes". <code>/omj</code> shows the reason; raise that gate's threshold, turn it off, or <code>/omj off</code> for the session.</p></div>
+          <div class="trouble"><h3>Nothing happens</h3><p>Run <code>claude --debug</code>. A failing hook leaves a line naming it and the reason.</p></div>
+        </div>
+      </section>
+
+      <section class="chapter" id="settings" aria-labelledby="h-settings">
+        <h2 id="h-settings">Settings</h2>
+        <p class="lede">Change one for the session with <code>/omj config &lt;name&gt; &lt;value&gt;</code>. To keep it: <code>/plugin configure ohmyjev@ohmyjev</code> in Claude Code, <code>omp plugin config set ohmyjev</code> in omp, the <code>ohmyjev</code> key in <code>~/.pi/agent/settings.json</code>, or <code>~/.codex/ohmyjev.json</code>.</p>
+        <div class="table">
+          <table>
+            <thead><tr><th>Setting</th><th>Default</th><th>What it changes</th></tr></thead>
+            <tbody>
+              <tr><td><code>enabled</code></td><td class="on">on</td><td>The whole mod. Off lets every call through.</td></tr>
+              <tr><td><code>autoApprove</code></td><td class="on">on</td><td>Skips the prompt for a call Jev is sure is safe. <code>approveConfidence</code> (0.9) and <code>approveRiskMax</code> (0.2) set how sure.</td></tr>
+              <tr><td><code>trimOutput</code></td><td class="on">on</td><td>Cuts shell output over <code>trimOver</code> (12000) to what the request needs; <code>trimKeep</code> (0.3) sets how likely a part must be needed to stay.</td></tr>
+              <tr><td><code>skillPick</code></td><td class="on">on</td><td>Claude Code: leaves the skill list out and names the one skill a prompt needs. <code>skillGate</code> (0.3), <code>skillMin</code> (0.4).</td></tr>
+              <tr><td><code>stuckCheck</code></td><td class="on">on</td><td>Tells the agent to change course when its failures repeat; <code>stuck</code> (0.7).</td></tr>
+              <tr><td><code>browse</code></td><td>off</td><td>Gives the model the <code>browse</code> tool.</td></tr>
+              <tr><td><code>routeEffort</code>, <code>routeSubagents</code></td><td class="on">on</td><td>Lets the router change effort and the subagent model.</td></tr>
+              <tr><td><code>routeMainModel</code></td><td>off</td><td>Also switches the main model; drops the prompt cache.</td></tr>
+              <tr><td><code>routeWithoutKey</code></td><td class="on">on</td><td>No key: the host's own classifier routes, up only.</td></tr>
+              <tr><td><code>bashGate</code>, <code>writeGate</code>, <code>exfilGate</code></td><td class="on">on</td><td>Turns each gate on or off.</td></tr>
+              <tr><td><code>requested</code></td><td>0.8</td><td>How sure Jev must be that your message asked for a call before a gate lets it through.</td></tr>
+              <tr><td><code>injectionScreen</code>, <code>screenReads</code></td><td class="on">on</td><td>Screens tool output, including Reads from outside the repo.</td></tr>
+              <tr><td><code>doneCheck</code></td><td class="on">on</td><td>Pushes back on an unverified "done".</td></tr>
+              <tr><td><code>autoCompact</code></td><td class="on">on</td><td>Compacts after a task switch, past <code>compactMinPercent</code> (40).</td></tr>
+              <tr><td><code>askJev</code></td><td class="on">on</td><td>Gives the model the <code>ask_jev</code> tool.</td></tr>
+              <tr><td><code>policies</code></td><td>empty</td><td>Your own rules, separated by <code>;</code>.</td></tr>
+              <tr><td><code>allowPaths</code></td><td><code>~/.claude;$TMPDIR;/tmp</code></td><td>Writable places outside the repo. Entries with <code>..</code> are ignored.</td></tr>
+              <tr><td><code>fastModel</code>, <code>balancedModel</code>, <code>deepModel</code></td><td><code>claude-{haiku,sonnet,opus}-5-5</code></td><td>The model for each router tier.</td></tr>
+              <tr><td><code>jevModel</code></td><td><code>jev-1.13.0</code></td><td>The Jev model asked through TypeSafe.</td></tr>
+              <tr><td><code>timeoutMs</code></td><td>1500</td><td>How long to wait for Jev before letting the call through.</td></tr>
+              <tr><td><code>logDecisions</code>, <code>statusLine</code></td><td class="on">on</td><td>Decision lines in the transcript; status under the prompt.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="chapter" id="hosts" aria-labelledby="h-hosts">
+        <h2 id="h-hosts">By host</h2>
+        <div class="table">
+          <table>
+            <thead><tr><th></th><th>Claude Code</th><th>Codex</th><th>omp</th><th>pi</th></tr></thead>
+            <tbody>
+              <tr><td>Bash gate</td><td>Bash</td><td>Bash</td><td><code>bash</code>, <code>eval</code>, GitHub pushes</td><td><code>bash</code>, <code>powershell</code></td></tr>
+              <tr><td>Write gate</td><td>Write, Edit, NotebookEdit</td><td><code>apply_patch</code></td><td><code>write</code>, <code>edit</code>, <code>ast_edit</code></td><td><code>write</code>, <code>edit</code></td></tr>
+              <tr><td>Auto-approve</td><td>yes</td><td>yes</td><td>omp doesn't ask</td><td>pi doesn't ask</td></tr>
+              <tr><td>Trim, stuck check, done-check</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+              <tr><td>Skill picker</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
+              <tr><td>Router</td><td>yes</td><td>no: hooks can't set it</td><td>yes</td><td>yes</td></tr>
+              <tr><td><code>/omj</code>, <code>ask_jev</code>, <code>browse</code></td><td>yes</td><td>no: hooks can't add tools</td><td>yes</td><td>yes</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="chapter" id="privacy" aria-labelledby="h-privacy">
+        <h2 id="h-privacy">Privacy</h2>
+        <p class="lede">With a key set, each check sends Jev only what it needs, cut to size. With no key, nothing goes. Logs stay in <code>~/.ohmyjev</code>, readable only by you.</p>
+        <div class="table">
+          <table>
+            <thead><tr><th>Check</th><th>What it sends</th></tr></thead>
+            <tbody>
+              <tr><td>Bash gate</td><td>The command (up to 16,000 characters), the working directory, the call's description, your latest message (1,500) and, right after a block, the blocked call. Plain reads send nothing.</td></tr>
+              <tr><td>Write gate</td><td>The path and the new content (16,000). Writes outside the repo are denied by code before anything is sent.</td></tr>
+              <tr><td>Exfil gate</td><td>The tool's name and input (4,000).</td></tr>
+              <tr><td>Injection screen</td><td>The tool's output (6,000).</td></tr>
+              <tr><td>Trim</td><td>Your latest message and the long output, in parts of about 1,500 characters, up to 24.</td></tr>
+              <tr><td>Stuck check</td><td>Your latest message and the last six failed calls: input and the end of each output.</td></tr>
+              <tr><td>Skill picker</td><td>Each prompt with every skill's name and one-line description.</td></tr>
+              <tr><td>Done-check</td><td>The request, five earlier ones, this turn's tool calls with the end of each output, and the agent's last message.</td></tr>
+              <tr><td>Router</td><td>The request (1,500).</td></tr>
+              <tr><td><code>browse</code></td><td>The goal and URL to the exfil gate; then each step, the page's controls and visible text to Jev.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="chapter" id="numbers" aria-labelledby="h-numbers">
+        <h2 id="h-numbers">Measurements</h2>
+        <p class="lede">All runs on the author's Apple silicon Mac in October 2026. Small samples, stated as such.</p>
+        <div class="table">
+          <table>
+            <thead><tr><th>Google Flights, Claude Code end to end</th><th>Runs</th><th>Median</th><th>Cost per run</th></tr></thead>
+            <tbody>
+              <tr><td>As shipped: Opus 5.5 at xhigh, Playwright</td><td class="n">108 · 339 · 31 s</td><td class="n">108 s</td><td class="n">$0.23–0.42</td></tr>
+              <tr><td>Router picks Haiku, Playwright</td><td class="n">44 · 69 · 39 s</td><td class="n">44 s</td><td class="n">~$0.01</td></tr>
+              <tr><td>Haiku by hand, for reference</td><td class="n">31 · 77 · 27 s</td><td class="n">31 s</td><td class="n">~$0.01</td></tr>
+              <tr><td>Router and <code>browse</code></td><td class="n">18.2 · 16.4 · 18.9 s</td><td class="n">18 s</td><td class="n">~$0.002</td></tr>
+              <tr><td><code>browse</code> called directly</td><td class="n">10.5 · 7.4 · 9.9 s</td><td class="n">10 s</td><td class="n">~$0.001</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table">
+          <table>
+            <thead><tr><th>Check</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>Jev cost and speed</td><td>3,877 real calls over 90 sessions: $0.13 in all, median 163 ms, 95th percentile 239 ms.</td></tr>
+              <tr><td>Auto-approve</td><td>637 of 865 real Jev-judged shell commands (74%) clear its bar; 31% of 4,888 commands are plain reads that skip Jev.</td></tr>
+              <tr><td>Trim</td><td>A 20,471-character test log to 4,582, the failure kept, in 281 ms.</td></tr>
+              <tr><td>Safety gates</td><td>28 of 28 live cases, three runs (<code>tests/live.ts</code>). Before the 0.4 and 0.5 fixes: 24 of 28.</td></tr>
+              <tr><td>Stuck check</td><td>0.96 on three repeats of one failing build; 0.15 on three unrelated failures.</td></tr>
+              <tr><td>Skill picker</td><td>4 of 4 on 8 real skills, including none for a test fix.</td></tr>
+              <tr><td>Router on coding tasks</td><td>10 small tasks, 10 of 10 pass either way; about 15% faster and 6% cheaper with it on, mostly from one task.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">Update with <code>claude plugin update ohmyjev@ohmyjev</code>, <code>codex plugin marketplace upgrade ohmyjev</code>, <code>omp plugin upgrade ohmyjev</code> or <code>pi update npm:ohmyjev</code>. Source, issues and the full README are on <a href="https://github.com/Novacon/ohmyjev">GitHub</a>.</p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-row">
+      <img src="logo.webp" alt="ohmyjev" width="900" height="272">
+      <nav aria-label="Footer"><a href="./">Home</a><a href="https://github.com/Novacon/ohmyjev">GitHub</a><a href="https://www.npmjs.com/package/ohmyjev">npm</a><a href="https://typesafe.ai">TypeSafe</a><span>© 2026 Novacon LLC · MIT</span></nav>
+    </div>
+  </div>
+</footer>
+<script src="site.js" defer></script>
+</body>
+</html>
