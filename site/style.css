@@ -61,6 +61,40 @@ code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
 .ready .brand { opacity: 1; }
 .brand .acc { color: var(--brand); }
 .brand img { display: block; width: 6.62em; height: 2em; }
+/* glitch: two copies of the logo's shape, in link and lavender, flicker out of line now and then */
+.glitch { position: relative; display: block; }
+.glitch::before, .glitch::after {
+  content: ""; position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  -webkit-mask: url("logo.webp") center / 100% 100% no-repeat; mask: url("logo.webp") center / 100% 100% no-repeat;
+}
+.glitch::before { background: var(--link); }
+.glitch::after { background: var(--lavender); }
+.ready .glitch { animation: glitch 3.4s step-end infinite; }
+.ready .glitch::before { animation: glitch-a 3.4s step-end infinite; }
+.ready .glitch::after { animation: glitch-b 3.4s step-end infinite; }
+@keyframes glitch {
+  0%, 69%, 73%, 91%, 95%, 100% { transform: none; opacity: 1; }
+  70% { transform: translateX(-2px) skewX(-2deg); opacity: .76; }
+  71% { transform: translateX(3px); opacity: 1; }
+  92% { transform: scaleX(1.008); opacity: .82; }
+  93% { transform: translateX(-1px); opacity: 1; }
+}
+@keyframes glitch-a {
+  0%, 69%, 72%, 91%, 94%, 100% { clip-path: inset(0 0 100% 0); opacity: 0; transform: none; }
+  70% { clip-path: inset(12% 0 62% 0); opacity: .72; transform: translateX(-.07em); }
+  71% { clip-path: inset(66% 0 12% 0); opacity: .52; transform: translateX(.04em); }
+  92% { clip-path: inset(38% 0 42% 0); opacity: .62; transform: translateX(-.05em); }
+  93% { clip-path: inset(76% 0 8% 0); opacity: .45; transform: translateX(-.03em); }
+}
+@keyframes glitch-b {
+  0%, 69%, 72%, 91%, 94%, 100% { clip-path: inset(100% 0 0 0); opacity: 0; transform: none; }
+  70% { clip-path: inset(58% 0 18% 0); opacity: .65; transform: translateX(.07em); }
+  71% { clip-path: inset(24% 0 58% 0); opacity: .46; transform: translateX(-.04em); }
+  92% { clip-path: inset(8% 0 74% 0); opacity: .58; transform: translateX(.05em); }
+  93% { clip-path: inset(48% 0 34% 0); opacity: .4; transform: translateX(-.03em); }
+}
+
+
 
 /* bottom chrome: credits left, slide counter + back-to-top right; appears once the intro has passed */
 .bottom {
@@ -370,7 +404,7 @@ td.on { color: var(--ok); }
 }
 @media (prefers-reduced-motion: reduce) {
   .js .slide .reveal { opacity: 1; transform: none; transition: none; }
-  .term-body .l, .term-input span::after { animation: none !important; }
+  .glitch, .glitch::before, .glitch::after, .term-body .l, .term-input span::after { animation: none !important; }
   #slide-progress { transition: none; }
 }
 
