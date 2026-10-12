@@ -16,7 +16,7 @@ claude plugin validate .
 
 ## Release (npm and the Claude plugin)
 1. Bump the same version in `package.json` and `.claude-plugin/plugin.json`.
-2. Commit and push to `main` (git remote `novacon`; this worktree's branch `plan` pushes with `git push novacon plan:main`, fast-forward only).
+2. Commit and push to `main` (git remote `novacon`; this worktree's local branch is `Novacon/main`, so push with `git push novacon HEAD:main`, fast-forward only).
 3. Tag and push: `git tag -a vX.Y.Z -m "..." && git push novacon vX.Y.Z`.
 4. `.github/workflows/publish.yml` then checks the tag matches `package.json`, runs the adapter tests and typecheck, and runs `npm publish`.
 
