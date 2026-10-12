@@ -429,3 +429,9 @@ td.n { font-family: var(--mono); font-size: .8125rem; font-variant-numeric: tabu
 #hosts td:first-child, #privacy td:first-child, #numbers td:first-child { color: var(--paper); white-space: nowrap; }
 #hosts td code, #privacy td code, #numbers td code { color: var(--lavender); }
 #numbers td.n { font-family: var(--mono); font-size: .8125rem; white-space: nowrap; }
+/* phones: the bottom bar is a plain footer at the end of the page, not a bar floating over the content */
+@media (max-width: 600px) {
+  .bottom, .js body:not(.passed) .bottom { position: static; visibility: visible; opacity: 1; z-index: 1; padding: 8px var(--inline) calc(28px + env(safe-area-inset-bottom, 0px)); }
+  body::after { display: none; }
+  .slide { padding-bottom: 56px; }
+}

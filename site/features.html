@@ -20,7 +20,7 @@
   <section id="top" class="slide doc" data-title="Features">
     <div class="doc-inner">
       <div class="head">
-        <p class="section-label lbl">00 / Features <span>every feature, setting and limit</span></p><h2>the <em>reference</em></h2>
+        <p class="section-label lbl">00 / Features <span>every feature, setting, and limit</span></p><h2>the <em>reference</em></h2>
         <p class="lede">ohmyjev asks <a href="https://typesafe.ai">Jev</a> about every step your agent takes. Each check takes about 160 ms and costs about $0.00003. Demos are on the <a href="./">home page</a>, the details are here.</p>
       </div>
     </div>
@@ -30,7 +30,7 @@
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">01 / What you get <span>15 features</span></p><h2>what you <em>get</em></h2>
-        <p class="lede">Fast and cheap enough to check every step. So ohmyjev uses it to approve, trim, pick skills, catch loops and stop the risky stuff.</p>
+        <p class="lede">Fast and cheap enough to check every step. So ohmyjev uses it to approve, trim, pick skills, catch loops, and stop the risky stuff.</p>
       </div>
       <div class="body reveal">
         <div class="grid g5">
@@ -48,7 +48,7 @@
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind gate">Safer</span></div><h3>Done-check</h3><p>"Done" with nothing tested? It pushes back once.</p><p class="cfg">doneCheck</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about files without reading them.</p><p class="cfg">askJev</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind ">Tool</span></div><h3>/omj config</h3><p>See and change settings without a reload.</p><p class="cfg">slash command</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/omj</h3><p>This session's calls, cost and blocks. Also <code>/omj stats</code>, <code>/omj off</code> and <code>/omj on</code>.</p><p class="cfg">slash command · enabled</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M11 20V5M17 20v-5M3 20h18"/></svg><span class="kind">Tool</span></div><h3>/omj</h3><p>This session's calls, cost, and blocks. Also <code>/omj stats</code>, <code>/omj off</code>, and <code>/omj on</code>.</p><p class="cfg">slash command · enabled</p></div>
         </div>
       </div>
     </div>
@@ -69,7 +69,7 @@
               <div class="rule"><span class="if">Clearly risky</span><span class="to" aria-hidden="true">→</span><span class="then deny">Denied, with the reason</span></div>
               <div class="rule"><span class="if">Clearly safe</span><span class="to" aria-hidden="true">→</span><span class="then ok">Runs, no permission prompt</span></div>
               <div class="rule"><span class="if">Unsure</span><span class="to" aria-hidden="true">→</span><span class="then">Normal permission flow, then the tool runs</span></div>
-              <div class="rule"><span class="if">Jev down, slow or no key</span><span class="to" aria-hidden="true">→</span><span class="then">Normal permission flow, then the tool runs</span></div>
+              <div class="rule"><span class="if">Jev down, slow, or no key</span><span class="to" aria-hidden="true">→</span><span class="then">Normal permission flow, then the tool runs</span></div>
             </div>
             <div class="stage">
               <h3><b>02</b> The output comes back</h3>
@@ -84,7 +84,7 @@
 Do not try to work around it with another command, another tool, a different path, or an encoding that does the same thing. Tell the user what was blocked and why, and ask whether to run it anyway. If they say yes, run exactly this again: their reply then lets it through.</pre></div>
             <div class="callout">
               <h3>Fails open, removes prompts</h3>
-              <p>If Jev is unsure, slow or down, the call goes through like normal. It never adds a prompt.</p>
+              <p>If Jev is unsure, slow, or down, the call goes through like normal. It never adds a prompt.</p>
             </div>
             <div class="callout warn">
               <p>Jev can be wrong, so keep your deny rules in <code>settings.json</code>.</p>

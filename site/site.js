@@ -1,5 +1,5 @@
 // ohmyjev.xyz, shared by index.html and features.html: rail, quick start, copy, the race, the replay,
-// the wordmark intro (landing only), slide state and the ambient field.
+// the wordmark intro (landing only), slide state, and the ambient field.
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2, '0');
 const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
