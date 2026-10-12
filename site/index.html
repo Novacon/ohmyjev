@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ohmyjev · Jev, batteries included</title>
-<meta name="description" content="Jev, batteries included, for Claude Code, Codex, pi, and omp. The same Google Flights search: 108 seconds in Claude Code as shipped, about 10 with ohmyjev's browse tool. No prompts for safe commands, long output cut to what matters, and nothing irreversible until you say yes.">
+<meta name="description" content="Jev, batteries included, for Claude Code, Codex, pi, and omp. The same Google Flights search: 108 seconds in Claude Code as shipped, about 10 with ohmyjev's browse tool. No prompts for safe commands, long output cut to what matters, compaction in a second, and nothing irreversible until you say yes.">
 <meta name="theme-color" content="#0a0a0a">
 <link rel="icon" href="logo.webp">
 <script>document.documentElement.classList.add('js')</script>
@@ -20,7 +20,7 @@
   <section id="top" class="slide landing" data-title="Quick start" aria-label="ohmyjev quick start">
     <div class="quick">
       <h1><a href="https://typesafe.ai">Jev</a>, batteries included, for Claude Code, Codex, pi, and omp.</h1>
-      <p class="tagline">Your coding agent, faster and safer. Safe commands skip the prompt, long output gets cut down, and nothing irreversible runs until you say yes.</p>
+      <p class="tagline">Your coding agent, faster and safer. Safe commands skip the prompt, long output gets cut down, compaction takes a second, and nothing irreversible runs until you say yes.</p>
       <p class="badges lbl"><span>Claude Code 2.1.287+</span><span>Codex · pi · omp</span><span>Decided by Jev, ~200 ms</span><span>MIT license</span></p>
       <div class="qs">
         <div class="qs-head lbl"><span>Quick start</span><span class="qs-tabs" role="tablist" aria-label="Agent"><button type="button" class="qs-tab" role="tab" data-agent="claude" aria-selected="true">Claude Code</button><button type="button" class="qs-tab" role="tab" data-agent="codex" aria-selected="false">Codex</button><button type="button" class="qs-tab" role="tab" data-agent="omp" aria-selected="false">omp</button><button type="button" class="qs-tab" role="tab" data-agent="pi" aria-selected="false">pi</button></span></div>
@@ -85,11 +85,12 @@
         <p class="lede">Jev is fast and cheap enough to check every step. Here's what that gets you, from real runs.</p>
       </div>
       <div class="body reveal">
-        <div class="grid g4">
+        <div class="grid g5">
           <div class="claim"><b>3 in 4</b><h3>shell commands run without a permission prompt</h3><p>If Jev is sure it's safe, it just runs. <code>ls</code> and <code>git status</code> skip Jev entirely.</p><p class="how">637 of 865 real commands<sup><a href="#m2">2</a></sup></p></div>
           <div class="claim"><b>163 ms</b><h3>and $0.00003 per Jev check</h3><p>Cheap enough to ask about every single step.</p><p class="how">3,877 real calls<sup><a href="#m3">3</a></sup></p></div>
           <div class="claim"><b>4,600</b><h3>characters left of a 20,000-character test log</h3><p>The failing test stays. The 400 passing lines go.</p><p class="how">one Jev call, 281 ms<sup><a href="#m4">4</a></sup></p></div>
           <div class="claim"><b>28 / 28</b><h3>right on the live safety test</h3><p>Wipes and key uploads get stopped. Normal edits and pushes don't.</p><p class="how">three runs, 28 of 28 each<sup><a href="#m5">5</a></sup></p></div>
+          <div class="claim"><b>336 ms</b><h3>to compact 60 messages</h3><p>Your constraints, decisions, and errors stay word for word. No model writes a summary.</p><p class="how">5 of 5 planted items kept<sup><a href="#m6">6</a></sup></p></div>
         </div>
       </div>
     </div>
@@ -192,7 +193,8 @@ codex plugin add ohmyjev@ohmyjev</pre></div></div>
               <li id="m2">637 of 865 real shell commands cleared auto-approve. 31% of 4,888 commands were plain reads that skip Jev.</li>
               <li id="m3">3,877 real Jev calls over 90 sessions cost $0.13. Median 163 ms.</li>
               <li id="m4">A 420-line test log with one failure. 20,471 characters in, 4,582 out.</li>
-              <li id="m5">28 real commands in <code>tests/live.ts</code>, against the live Jev.</li>
+              <li id="m5">28 real commands in <code>tests/live.ts</code>, against the live Jev, with secret masking on.</li>
+              <li id="m6">60 messages with 5 planted items (3 user constraints, a failing test, and an open question) among 51 lines of routine tool output. All 5 kept, none of the 51.</li>
             </ol>
             <div class="links lbl"><a href="features.html">Every feature <span aria-hidden="true">→</span></a><a href="https://github.com/Novacon/ohmyjev">GitHub <span aria-hidden="true">↗</span></a><a href="https://typesafe.ai">typesafe.ai <span aria-hidden="true">↗</span></a></div>
           </div>

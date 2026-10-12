@@ -41,15 +41,15 @@
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM3 9h18M7 7h.01M13 13l2 5 1-2 2-1z"/></svg><span class="kind fast">Faster</span></div><h3>browse</h3><p>Jev drives a headless browser, click by click. A flight search took 10 s.</p><p class="cfg">browse · off by default</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18M6 9c6 0 12 1 12 7v5M15 18l3 3 3-3"/></svg><span class="kind fast">Faster</span></div><h3>Router</h3><p>Picks effort and the model for each request. Sent the flight search to Haiku.</p><p class="cfg">routeEffort, routeSubagents</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind fast">Faster</span></div><h3>Auto-compact</h3><p>New task and a full context? It compacts and keeps your new request.</p><p class="cfg">autoCompact</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind fast">Faster</span></div><h3>Fast compaction</h3><p>Jev keeps the messages that still matter, word for word. 60 messages in 336 ms, every constraint kept.</p><p class="cfg">fastCompact</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/></svg><span class="kind fast">Faster</span></div><h3>Fast compaction</h3><p>Jev keeps the messages that still matter, word for word. 60 messages in 336 ms, every constraint kept.</p><p class="cfg">fastCompact · Claude Code, pi</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind gate">Safer</span></div><h3>Bash gate</h3><p>Blocks commands that can't be undone or send your keys out. Normal edits and pushes go through. Say yes and it runs.</p><p class="cfg">bashGate</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg><span class="kind gate">Safer</span></div><h3>Write gate</h3><p>Blocks writes outside the repo or with keys in them. Every worktree counts as the repo.</p><p class="cfg">writeGate</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg><span class="kind gate">Safer</span></div><h3>Exfil gate</h3><p>Blocks web and MCP calls that send your files or keys out. Every gate also checks your <code>policies</code>.</p><p class="cfg">exfilGate</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"/></svg><span class="kind gate">Safer</span></div><h3>Injection screen</h3><p>Flags output that tries to give the model orders.</p><p class="cfg">injectionScreen</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind gate">Safer</span></div><h3>Done-check</h3><p>"Done" with nothing tested? It pushes back once.</p><p class="cfg">doneCheck</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind gate">Safer</span></div><h3>Subagent checks</h3><p>A vague subagent brief goes back once. A subagent's "done" is checked against what it actually ran.</p><p class="cfg">subagentCheck</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind gate">Safer</span></div><h3>Writing rules</h3><p>Your final reply is checked against the writing rules in CLAUDE.md, and rewritten once if it breaks one.</p><p class="cfg">proseCheck</p></div>
-          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></svg><span class="kind gate">Safer</span></div><h3>Secret masking</h3><p>Keys, tokens, and emails are swapped for markers before anything goes to Jev.</p><p class="cfg">maskSecrets</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v5M12 9l-6 5M12 9l6 5M3 14h6v6H3zM15 14h6v6h-6z"/></svg><span class="kind gate">Safer</span></div><h3>Subagent checks</h3><p>A vague subagent brief goes back once. A subagent's "done" is checked against what it actually ran.</p><p class="cfg">subagentCheck · Claude Code</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10l4 4v12H5zM9 12h6M9 16h4"/></svg><span class="kind gate">Safer</span></div><h3>Writing rules</h3><p>Your final reply is checked against the writing rules in CLAUDE.md and AGENTS.md, and rewritten once if it breaks one.</p><p class="cfg">proseCheck · Claude Code</p></div>
+          <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3M12 15v2"/></svg><span class="kind gate">Safer</span></div><h3>Secret masking</h3><p>Keys, tokens, URL credentials, emails, and your home folder become markers before anything goes to Jev.</p><p class="cfg">maskSecrets</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zM14.5 14.5L20 20"/></svg><span class="kind fast">Faster</span></div><h3>find_code</h3><p>Finds code by what it does, even when it's named something else. Returns the file and line, or no match.</p><p class="cfg">findCode</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v12H9l-6 5zM10 8.5a2 2 0 1 1 2.6 1.9c-.4.1-.6.5-.6.9v.4M12 13v.5"/></svg><span class="kind">Tool</span></div><h3>ask_jev</h3><p>Lets the model ask Jev about files without reading them. Give it a folder and it asks every file, returning the yes ones.</p><p class="cfg">askJev</p></div>
           <div class="feat"><div class="top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM7 10l3 2-3 2M12 15h4"/></svg><span class="kind ">Tool</span></div><h3>/omj config</h3><p>See and change settings without a reload.</p><p class="cfg">slash command</p></div>
@@ -259,9 +259,11 @@ claude plugin uninstall ohmyjev@ohmyjev</pre>
               <tr><td>Write gate</td><td>Write, Edit, NotebookEdit</td><td><code>apply_patch</code></td><td><code>write</code>, <code>edit</code>, <code>ast_edit</code></td><td><code>write</code>, <code>edit</code></td></tr>
               <tr><td>Auto-approve</td><td>yes</td><td>yes</td><td>omp doesn't ask</td><td>pi doesn't ask</td></tr>
               <tr><td>Trim, stuck check, done-check</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
-              <tr><td>Skill picker</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
+              <tr><td>Fast compaction</td><td>yes</td><td>no</td><td>no: omp can only add to the summary</td><td>yes</td></tr>
+              <tr><td>Skill picker, subagent checks, writing rules</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
+              <tr><td>Secret masking</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
               <tr><td>Router</td><td>yes</td><td>no: hooks can't set it</td><td>yes</td><td>yes</td></tr>
-              <tr><td><code>/omj</code>, <code>ask_jev</code>, <code>browse</code></td><td>yes</td><td>no: hooks can't add tools</td><td>yes</td><td>yes</td></tr>
+              <tr><td><code>/omj</code>, <code>ask_jev</code>, <code>find_code</code>, <code>browse</code></td><td>yes</td><td>no: hooks can't add tools</td><td>yes</td><td>yes</td></tr>
               <tr><td>Install</td><td><code>/plugin install ohmyjev --marketplace Novacon/ohmyjev</code></td><td><code>codex plugin marketplace add Novacon/ohmyjev</code>, then <code>codex plugin add ohmyjev@ohmyjev</code> and <code>/hooks</code></td><td><code>omp plugin install ohmyjev</code></td><td><code>pi install npm:ohmyjev</code></td></tr>
             </tbody>
           </table>
@@ -274,7 +276,7 @@ claude plugin uninstall ohmyjev@ohmyjev</pre>
     <div class="doc-inner">
       <div class="head reveal">
         <p class="section-label lbl">07 / Privacy <span>what each check sends</span></p><h2><em>privacy</em></h2>
-        <p class="lede">Each check sends Jev only what it needs. No key, nothing goes. Logs stay in <code>~/.ohmyjev</code>.</p>
+        <p class="lede">Each check sends Jev only what it needs, with secrets masked first. No key, nothing goes. Logs stay in <code>~/.ohmyjev</code>.</p>
       </div>
       <div class="body reveal">
         <div class="table">
@@ -289,7 +291,10 @@ claude plugin uninstall ohmyjev@ohmyjev</pre>
               <tr><td>Stuck check</td><td>Your latest message and the last six failed calls: input and the end of each output.</td></tr>
               <tr><td>Skill picker</td><td>Each prompt with every skill's name and one-line description.</td></tr>
               <tr><td>Done-check</td><td>The request, five earlier ones, this turn's tool calls with the end of each output, and the agent's last message.</td></tr>
+              <tr><td>Fast compaction</td><td>Recent messages in groups of 10, each cut to 1,200 characters.</td></tr>
+              <tr><td>Writing rules</td><td>Each final reply (6,000). The rules come from your instruction files once, pulled out by Haiku inside Claude Code.</td></tr>
               <tr><td>Router</td><td>The request (1,500).</td></tr>
+              <tr><td><code>ask_jev</code>, <code>find_code</code></td><td>The question and repo files. Never files outside the repo.</td></tr>
               <tr><td><code>browse</code></td><td>The goal and URL to the exfil gate; then each step, the page's controls and visible text to Jev.</td></tr>
             </tbody>
           </table>
@@ -325,7 +330,8 @@ claude plugin uninstall ohmyjev@ohmyjev</pre>
               <tr><td>Jev cost and speed</td><td>3,877 real calls over 90 sessions: $0.13 in all, median 163 ms, 95th percentile 239 ms.</td></tr>
               <tr><td>Auto-approve</td><td>637 of 865 real commands (74%). Plus 31% of all commands skip Jev.</td></tr>
               <tr><td>Trim</td><td>A 20,471-character test log to 4,582, the failure kept, in 281 ms.</td></tr>
-              <tr><td>Safety gates</td><td>28 of 28, three runs. Was 24 of 28 before the fixes.</td></tr>
+              <tr><td>Safety gates</td><td>28 of 28, three runs. Was 24 of 28 before the fixes. Still 28 of 28 with secret masking on.</td></tr>
+              <tr><td>Fast compaction</td><td>60 messages in 336 ms. All 5 planted items kept (3 constraints, a failing test, an open question), none of the 51 lines of routine output.</td></tr>
               <tr><td>Stuck check</td><td>0.96 on three repeats of one failing build; 0.15 on three unrelated failures.</td></tr>
               <tr><td>Skill picker</td><td>4 of 4 on 8 real skills, including none for a test fix.</td></tr>
               <tr><td>Router on coding tasks</td><td>10 of 10 pass either way. About 15% faster with it on.</td></tr>
