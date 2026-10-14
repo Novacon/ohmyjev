@@ -9,22 +9,22 @@
    Every doc slide shares one frame: label + heading on the left, lede on the right, then a body
    whose panels stretch to equal heights, so the slides line up when you page through them. */
 :root {
-  --ground: #0a0a0a;
+  --ground: #0e1012; /* kb:purp: bg */
   --surface: #131313;
   --panel: rgba(19, 19, 19, .9);
   --panel-hi: rgba(28, 28, 28, .94);
-  --paper: #f5f3fa;
+  --paper: #e6e8e8; /* kb:purp: fg */
   --muted: #b3aec2;
   --faint: #91899f;
   --line: #2e2e2e;
-  --steel: #91899f;
-  --brand: #9d78ff;
+  --steel: #807e8e; /* kb:purp: accent */
+  --brand: #9d78ff; /* kb:purp: redDim */
   --brand-hi: #b69cff;
-  --link: #c9b8ff;
+  --link: #c2b0f4; /* kb:purp: warm */
   --lavender: #b69cff;
-  --ok: #56e887;
-  --warn: #ffc857;
-  --err: #ff737d;
+  --ok: #6ed2a0; /* kb:purp: green */
+  --warn: #f0be67; /* kb:purp: yellow */
+  --err: #f47a7d; /* kb:purp: red */
   --info: #74c7ff;
   --inline: clamp(22px, 5.5vw, 75px);
   --block: clamp(26px, 4.5vh, 75px);
