@@ -15,10 +15,10 @@
   --panel: color-mix(in srgb, var(--surface) 90%, transparent);
   --panel-hi: color-mix(in srgb, var(--surface-hi) 94%, transparent);
   --paper: #e6e8e8; /* kb:purp: fg */
-  --muted: #b3aec2;
-  --faint: #91899f;
+  --muted: color-mix(in srgb, var(--paper) 78%, transparent);
+  --faint: color-mix(in srgb, var(--paper) 62%, transparent);
   --line: color-mix(in srgb, var(--paper) 14%, var(--ground));
-  --steel: #807e8e; /* kb:purp: accent */
+  --steel: #798186; /* kb:purp: accent */
   --brand: #9d78ff; /* kb:purp: redDim */
   --brand-hi: #b69cff;
   --link: #c2b0f4; /* kb:purp: warm */
