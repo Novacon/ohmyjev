@@ -10,13 +10,14 @@
    whose panels stretch to equal heights, so the slides line up when you page through them. */
 :root {
   --ground: #0e1012; /* kb:purp: bg */
-  --surface: #131313;
-  --panel: rgba(19, 19, 19, .9);
-  --panel-hi: rgba(28, 28, 28, .94);
+  --surface: color-mix(in srgb, var(--paper) 3%, var(--ground));
+  --surface-hi: color-mix(in srgb, var(--paper) 7%, var(--ground));
+  --panel: color-mix(in srgb, var(--surface) 90%, transparent);
+  --panel-hi: color-mix(in srgb, var(--surface-hi) 94%, transparent);
   --paper: #e6e8e8; /* kb:purp: fg */
   --muted: #b3aec2;
   --faint: #91899f;
-  --line: #2e2e2e;
+  --line: color-mix(in srgb, var(--paper) 14%, var(--ground));
   --steel: #807e8e; /* kb:purp: accent */
   --brand: #9d78ff; /* kb:purp: redDim */
   --brand-hi: #b69cff;
@@ -115,7 +116,7 @@ code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
 #slide-progress { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--brand); transition: width .5s var(--ease); }
 .to-top {
   display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); color: var(--paper);
-  background: rgba(19, 19, 19, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--surface) 72%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   transition: border-color .2s ease, color .2s ease;
 }
 .to-top span { color: var(--brand); }
@@ -123,18 +124,18 @@ code { font-family: var(--mono); font-size: .875em; color: var(--paper); }
 
 /* content fades out under the bottom chrome */
 body::after { content: ""; position: fixed; left: 0; right: 0; z-index: 14; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
-body::after { bottom: 0; height: calc(var(--block) + 52px); background: linear-gradient(rgba(10, 10, 10, 0), var(--ground) 55%); }
+body::after { bottom: 0; height: calc(var(--block) + 52px); background: linear-gradient(transparent, var(--ground) 55%); }
 .passed::after { opacity: 1; }
 
 /* side rail, after omp.sh: one square per slide, title pops out on hover */
 .rail {
   position: fixed; right: clamp(16px, 1.8vw, 40px); top: 50%; transform: translateY(-50%); z-index: 16;
   display: flex; flex-direction: column; border: 1px solid var(--line);
-  background: rgba(19, 19, 19, .72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--surface) 72%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
 }
 .rail a { position: relative; display: grid; place-items: center; width: 58px; height: 58px; border-bottom: 1px solid var(--line); color: var(--steel); transition: color .2s ease, background .2s ease; }
 .rail a:last-child { border-bottom: 0; }
-.rail a:hover, .rail a:focus-visible { color: var(--paper); background: rgba(140, 140, 140, .1); outline: none; }
+.rail a:hover, .rail a:focus-visible { color: var(--paper); background: color-mix(in srgb, var(--paper) 6%, transparent); outline: none; }
 .rail a[aria-current="page"] { color: var(--brand); background: rgba(157, 120, 255, .07); }
 .rail a[aria-current="page"]::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 2px; background: var(--brand); }
 .rail svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: square; stroke-linejoin: miter; }
@@ -178,10 +179,10 @@ h1 a:hover { color: var(--brand-hi); }
 .qs-tab:hover { color: var(--paper); }
 .qs-tab[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); }
 .qs-rows[hidden] { display: none; }
-.qs-rows { border: 1px solid var(--line); background: rgba(19, 19, 19, .78); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.qs-rows { border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 78%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .qs-row { display: flex; align-items: stretch; border-top: 1px solid var(--line); transition: background .2s ease; }
 .qs-row:first-child { border-top: 0; }
-.qs-row:hover { background: rgba(28, 28, 28, .6); }
+.qs-row:hover { background: color-mix(in srgb, var(--surface-hi) 60%, transparent); }
 .qs-n, .qs-p { display: grid; place-items: center; width: 44px; flex: none; border-right: 1px solid var(--line); font-family: var(--mono); font-size: .875rem; }
 .qs-n { color: var(--faint); }
 .qs-p { color: var(--brand); }
@@ -243,7 +244,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 .stats .lbl { font-size: .75rem; line-height: 1.4; color: var(--faint); }
 
 /* code windows */
-.code { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); background: rgba(10, 10, 10, .78); }
+.code { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); background: color-mix(in srgb, var(--ground) 78%, transparent); }
 .code-bar { display: flex; align-items: center; gap: 12px; padding: 7px 12px; border-bottom: 1px solid var(--line); color: var(--faint); font-size: .6875rem; }
 .code-bar .dots { color: var(--steel); font-size: .5rem; letter-spacing: .35em; }
 .copy { margin-left: auto; color: var(--muted); font-size: .6875rem; transition: color .2s ease; }
@@ -262,7 +263,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 .card-head a.meta { color: var(--muted); transition: color .2s ease; }
 .card-head a.meta:hover { color: var(--paper); }
 .card-head a.meta span { color: var(--brand); }
-.cmd { padding: 8px 12px; border: 1px solid var(--line); background: rgba(10, 10, 10, .78); font: 14px/1.6 var(--mono); color: var(--paper); white-space: pre-wrap; overflow-wrap: break-word; }
+.cmd { padding: 8px 12px; border: 1px solid var(--line); background: color-mix(in srgb, var(--ground) 78%, transparent); font: 14px/1.6 var(--mono); color: var(--paper); white-space: pre-wrap; overflow-wrap: break-word; }
 
 /* flow: what happens to one tool call */
 .flow-cols { display: grid; gap: var(--gap); grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: stretch; }
@@ -294,7 +295,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 
 /* demo: a Claude Code window replaying one ohmyjev moment at a time */
 .demo-cols { flex: 1; display: grid; gap: var(--gap); grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: stretch; }
-.term { background: rgba(10, 10, 10, .92); }
+.term { background: color-mix(in srgb, var(--ground) 92%, transparent); }
 .term-body { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 340px; padding: 18px 20px; font: 14px/1.6 var(--mono); color: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; }
 .term-body .t, .term-body .a { padding-left: 2ch; text-indent: -2ch; }
 .term-body .l { display: block; animation: line-in .35s var(--ease) both; }
@@ -337,7 +338,7 @@ h3 { font: 600 var(--ui) var(--label); letter-spacing: .06em; text-transform: up
 .table { border: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; }
 table { width: 100%; border-collapse: collapse; }
 th { padding: 7px 14px; text-align: left; font: 600 .6875rem var(--label); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--line); background: var(--panel); }
-td { padding: clamp(3px, .5vh, 8px) 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .9375rem; line-height: 1.35; vertical-align: top; background: rgba(19, 19, 19, .82); transition: background .2s ease; }
+td { padding: clamp(3px, .5vh, 8px) 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .9375rem; line-height: 1.35; vertical-align: top; background: color-mix(in srgb, var(--surface) 82%, transparent); transition: background .2s ease; }
 tr:hover td { background: var(--panel-hi); }
 tr:last-child td { border-bottom: 0; }
 td:first-child, td:nth-child(2) { white-space: nowrap; }
@@ -396,7 +397,7 @@ td.on { color: var(--ok); }
   /* settings table becomes one block per setting: name and default on a line, what it changes under it */
   thead { display: none; }
   table, tbody, tr, td { display: block; }
-  tr { padding: 10px 14px; border-bottom: 1px solid var(--line); background: rgba(19, 19, 19, .82); }
+  tr { padding: 10px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 82%, transparent); }
   tr:last-child { border-bottom: 0; }
   td, tr:hover td { display: inline; padding: 0; border: 0; background: none; white-space: normal !important; }
   td:nth-child(2)::before { content: " · "; color: var(--faint); }
@@ -420,7 +421,7 @@ td.on { color: var(--ok); }
 .lane-time small { display: block; margin-top: 6px; color: var(--faint); font: .8125rem var(--mono); }
 .lane.win .lane-time b { color: var(--paper); }
 .lane.done .lane-time b::after { content: " ✓"; color: var(--ok); font-size: .5em; vertical-align: .35em; }
-.lane .track { grid-column: 1 / -1; height: 6px; background: rgba(140, 140, 140, .14); }
+.lane .track { grid-column: 1 / -1; height: 6px; background: var(--line); }
 .lane .track i { display: block; height: 100%; width: var(--w, 0%); background: var(--steel); }
 .lane.win .track i { background: var(--brand); }
 .race-foot { flex-direction: row !important; align-items: center; justify-content: space-between; flex-wrap: wrap; }
